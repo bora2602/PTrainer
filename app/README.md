@@ -1,6 +1,6 @@
 # Ptrainer
 
-Responsive fitness coaching pilot with trainer/trainee roles, invitations, direct workout creation and pre-logging edits, workout assignment and logging, progress tracking, nutrition journaling, notifications, messaging, profiles, personal-data export, and test-mode subscriptions.
+Responsive fitness coaching pilot with trainer/trainee roles, invitations, searchable workout templates, direct workout creation and pre-logging edits, workout assignment and logging, progress tracking, nutrition journaling, notifications, messaging, profiles, personal-data export, and test-mode subscriptions.
 
 ## Run locally
 
