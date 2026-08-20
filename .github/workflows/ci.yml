@@ -1,0 +1,47 @@
+name: Ptrainer CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm migrate
+      - name: Start Ptrainer
+        run: pnpm start > /tmp/ptrainer-ci.log 2>&1 &
+      - name: Wait for readiness
+        run: |
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:4173/readyz && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: pnpm test
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptrainer-server-log
+          path: /tmp/ptrainer-ci.log
+      - name: Validate container build
+        run: docker build --tag ptrainer:ci .

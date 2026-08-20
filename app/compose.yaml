@@ -1,0 +1,55 @@
+services:
+  edge:
+    image: caddy:2.10-alpine
+    profiles: ["edge"]
+    environment:
+      PTRAINER_DOMAIN: ${PTRAINER_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ptrainer_caddy_data:/data
+      - ptrainer_caddy_config:/config
+    depends_on:
+      app:
+        condition: service_started
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://ptrainer:${PTRAINER_DB_PASSWORD:-ptrainer_local_dev}@postgres:5432/ptrainer
+      HOST: 0.0.0.0
+      PORT: 4173
+      APP_ORIGIN: http://127.0.0.1:4173
+      NODE_ENV: development
+    ports:
+      - "127.0.0.1:4173:4173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ptrainer
+      POSTGRES_USER: ptrainer
+      POSTGRES_PASSWORD: ${PTRAINER_DB_PASSWORD:-ptrainer_local_dev}
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - ptrainer_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ptrainer -d ptrainer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  ptrainer_postgres_data:
+  ptrainer_caddy_data:
+  ptrainer_caddy_config:

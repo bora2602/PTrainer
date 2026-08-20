@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1f1a" />
+  <title>Ptrainer — Fitness Coaching</title>
+  <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
+    <div class="auth-brand"><img src="assets/ptrainer-logo.svg" alt="" /><span>Ptrainer</span></div>
+    <div class="auth-layout">
+      <div class="auth-intro"><p class="eyebrow">COACH BETTER. PROGRESS TOGETHER.</p><h1>One place for every workout, client, and win.</h1><p>Build programs, coach with context, and help clients see their progress clearly.</p><div class="auth-proof"><span>✓ Secure role-based access</span><span>✓ Fast mobile workout logging</span><span>✓ Clear progress history</span></div></div>
+      <div class="auth-card">
+        <div class="auth-tabs"><button class="active" data-auth-tab="login">Sign in</button><button data-auth-tab="register">Create account</button></div>
+        <form id="loginForm" class="auth-form">
+          <div><p class="eyebrow">WELCOME BACK</p><h2 id="authTitle">Sign in to Ptrainer</h2></div>
+          <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required /></label><button type="button" class="text-button" id="forgotPasswordButton">Forgot password?</button>
+          <p class="form-error" id="loginError" role="alert"></p>
+          <button class="primary-button auth-submit" type="submit">Sign in securely</button>
+          <div class="demo-divider"><span>or use a demo account</span></div>
+          <div class="demo-actions"><button type="button" class="secondary-button" data-demo="trainer">Trainer demo</button><button type="button" class="secondary-button" data-demo="trainee">Trainee demo</button></div>
+        </form>
+        <form id="forgotPasswordForm" class="auth-form" hidden>
+          <div><p class="eyebrow">ACCOUNT RECOVERY</p><h2>Reset your password</h2><p class="auth-help">Request a short-lived reset code, then choose a new password.</p></div>
+          <label>Email<input name="email" type="email" maxlength="254" autocomplete="email" required /></label>
+          <button class="secondary-button" id="requestResetButton" type="button">Create reset code</button>
+          <label>Reset code<input name="token" minlength="20" autocomplete="one-time-code" required /></label>
+          <label>New password<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /><small>10+ characters with uppercase, lowercase, number, and symbol.</small></label>
+          <p class="form-error" id="resetError" role="alert"></p>
+          <button class="primary-button auth-submit" type="submit">Update password</button>
+          <button class="text-button" id="backToLoginButton" type="button">← Back to sign in</button>
+        </form>
+        <form id="registerForm" class="auth-form" hidden>
+          <div><p class="eyebrow">GET STARTED</p><h2>Create your Ptrainer account</h2></div>
+          <label>Full name<input name="name" maxlength="80" autocomplete="name" required /></label>
+          <label>Email<input name="email" type="email" maxlength="254" autocomplete="email" required /></label>
+          <label>Password<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /><small>10+ characters with uppercase, lowercase, number, and symbol.</small></label>
+          <fieldset><legend>I am a</legend><label class="role-option"><input type="radio" name="role" value="TRAINER" checked /><span><b>Trainer</b><small>Build and assign programs</small></span></label><label class="role-option"><input type="radio" name="role" value="TRAINEE" /><span><b>Trainee</b><small>Complete workouts and track progress</small></span></label></fieldset>
+          <p class="form-error" id="registerError" role="alert"></p>
+          <button class="primary-button auth-submit" type="submit">Create account</button>
+        </form>
+      </div>
+    </div>
+    <div class="auth-legal">Ptrainer is a coaching tool, not medical advice. <button type="button" data-open-privacy>Privacy</button><span>·</span><button type="button" data-open-terms>Terms</button></div>
+  </section>
+
+  <div class="app-shell" id="appShell" hidden>
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="#" aria-label="Ptrainer home">
+        <img class="brand-logo" src="assets/ptrainer-logo.svg" alt="" /><span>Ptrainer</span>
+      </a>
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="dashboard"><span class="icon">⌂</span><span>Overview</span></button>
+        <button class="nav-item trainer-only" data-view="clients"><span class="icon">◎</span><span>Clients</span><span class="nav-count" id="navClientCount">0</span></button>
+        <button class="nav-item" data-view="workouts"><span class="icon">◇</span><span>Workouts</span></button>
+        <button class="nav-item" data-view="progress"><span class="icon">↗</span><span>Progress</span></button>
+        <button class="nav-item" data-view="nutrition"><span class="icon">◒</span><span>Nutrition</span></button>
+        <button class="nav-item" data-view="messages"><span class="icon">✉</span><span>Messages</span></button>
+        <button class="nav-item trainer-only" data-view="builder"><span class="icon">＋</span><span>Workout builder</span></button>
+        <button class="nav-item trainer-only" data-view="billing"><span class="icon">◇</span><span>Subscription</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item" id="helpButton"><span class="icon">?</span><span>Help & support</span></button>
+          <button class="nav-item" data-view="settings"><span class="icon">⚙</span><span>Settings</span></button>
+          <button class="nav-item" id="logoutButton"><span class="icon">↪</span><span>Sign out</span></button>
+        <div class="profile-mini">
+          <div class="avatar avatar-photo">MA</div>
+          <div><strong id="profileName">—</strong><span id="profileRole">—</span></div>
+          <button aria-label="Open profile settings" data-go="settings">•••</button>
+        </div>
+      </div>
+    </aside>
+
+    <main id="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" aria-label="Open navigation">☰</button>
+        <div class="search"><span>⌕</span><input aria-label="Search" placeholder="Search clients, workouts..." /></div>
+        <div class="top-actions">
+          <label class="client-picker trainer-only" for="clientPicker"><span>Client</span><select id="clientPicker" aria-label="Active client"></select></label>
+          <button class="icon-button" id="notificationsButton" aria-label="Notifications">♢<span class="dot" id="notificationDot"></span></button>
+          <span class="secure-status" title="Protected local session"><i></i> Secure session</span>
+          <button class="primary-button" id="inviteButton"><span>＋</span> Invite client</button>
+        </div>
+      </header>
+
+      <section class="page active-view" id="dashboard-view">
+        <div id="trainerDashboard">
+        <div class="welcome-row">
+          <div><p class="eyebrow">TUESDAY, AUGUST 19</p><h1>Good morning, Maya <span>👋</span></h1><p>Here’s what’s happening with your clients today.</p></div>
+          <button class="date-button">◷ This week⌄</button>
+        </div>
+
+        <article class="focus-card">
+          <div class="focus-copy"><span class="focus-kicker">NEXT BEST ACTION</span><h2>Sarah is training right now</h2><p>Her lower-body session is in progress. Review the latest set data or leave a quick coaching note while it’s relevant.</p><div class="focus-actions"><button class="primary-button" data-go="workouts">Open live workout</button><button class="ghost-button" id="quickNoteButton">Add coaching note</button></div></div>
+          <div class="focus-metric"><div class="pulse-ring"><span>62%</span></div><strong>Session progress</strong><small>Started 28 minutes ago</small></div>
+        </article>
+
+        <div class="stat-grid">
+          <article class="stat-card"><div class="stat-icon green">◎</div><div><span>Active clients</span><strong id="activeClients">—</strong><small class="up">↗ 2 this month</small></div></article>
+          <article class="stat-card"><div class="stat-icon orange">✓</div><div><span>Workouts completed</span><strong id="workoutsCompleted">—</strong><small class="up">↗ 14% vs last week</small></div></article>
+          <article class="stat-card"><div class="stat-icon violet">◷</div><div><span>Completion rate</span><strong id="completionRate">—</strong><small>33 of 38 assigned</small></div></article>
+          <article class="stat-card"><div class="stat-icon blue">↗</div><div><span>Progress updates</span><strong id="progressUpdates">—</strong><small class="up">↗ 6 this week</small></div></article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel schedule-panel">
+            <div class="panel-header"><div><h2>Upcoming workouts</h2><p>Loading assignments…</p></div><button data-go="workouts">Open workouts →</button></div>
+            <div class="schedule-list">
+              <div class="schedule-item"><div class="time"><strong>8:00</strong><span>AM</span></div><div class="color-line purple"></div><div class="client-avatar lavender">JL</div><div class="schedule-info"><strong>Jordan Lee</strong><span>Upper Body Strength · 45 min</span></div><span class="status done">Completed</span><button class="more">•••</button></div>
+              <div class="schedule-item"><div class="time"><strong>10:30</strong><span>AM</span></div><div class="color-line green-line"></div><div class="client-avatar mint">SK</div><div class="schedule-info"><strong>Sarah Kim</strong><span>Lower Body Power · 55 min</span></div><span class="status active">In progress</span><button class="more">•••</button></div>
+              <div class="schedule-item"><div class="time"><strong>1:00</strong><span>PM</span></div><div class="color-line orange-line"></div><div class="client-avatar peach">DM</div><div class="schedule-info"><strong>Daniel Moore</strong><span>Full Body Conditioning · 40 min</span></div><span class="status upcoming">Upcoming</span><button class="more">•••</button></div>
+              <div class="schedule-item"><div class="time"><strong>4:30</strong><span>PM</span></div><div class="color-line blue-line"></div><div class="client-avatar sky">AP</div><div class="schedule-info"><strong>Amelia Park</strong><span>Mobility & Recovery · 30 min</span></div><span class="status upcoming">Upcoming</span><button class="more">•••</button></div>
+            </div>
+          </article>
+
+          <article class="panel attention-panel">
+            <div class="panel-header"><div><h2>Needs attention</h2><p>Loading…</p></div><button data-go="clients">View clients</button></div>
+            <div class="attention-list">
+              <button class="attention-item"><span class="attention-icon warning">!</span><span><strong>Missed workout</strong><small>Alex Morgan · 2 days ago</small></span><span>›</span></button>
+              <button class="attention-item"><span class="attention-icon progress">↗</span><span><strong>New progress update</strong><small>Sarah Kim · 3 hours ago</small></span><span>›</span></button>
+              <button class="attention-item"><span class="attention-icon note">✎</span><span><strong>Workout note added</strong><small>Jordan Lee · Yesterday</small></span><span>›</span></button>
+            </div>
+            <div class="weekly-goal"><div><span>Weekly coaching goal</span><strong>8 of 10 check-ins</strong></div><div class="progress-track"><span style="width:80%"></span></div><small>2 more to reach your goal</small></div>
+          </article>
+        </div>
+
+        <article class="panel clients-panel">
+          <div class="panel-header"><div><h2>Client progress</h2><p>Latest updates from your active clients</p></div><button data-go="clients">View all clients →</button></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>CLIENT</th><th>PROGRAM</th><th>WEEKLY PROGRESS</th><th>LAST ACTIVITY</th><th>STATUS</th><th></th></tr></thead>
+              <tbody id="dashboardClientRows"></tbody>
+            </table>
+          </div>
+        </article>
+        </div>
+        <div id="traineeDashboard" hidden>
+          <div class="welcome-row"><div><p class="eyebrow">YOUR TRAINING DAY</p><h1>Ready when you are <span>💪</span></h1><p>Your next workout and weekly momentum at a glance.</p></div><span class="coach-chip">Coach: Maya Adams</span></div>
+          <article class="trainee-hero"><div><span class="focus-kicker">TODAY'S WORKOUT</span><h2 id="traineeWorkoutName">Upper Body Strength</h2><p id="traineeWorkoutMeta">4 exercises · Approximately 45 minutes</p><button class="primary-button" data-go="workouts">Start workout →</button></div><div class="streak"><strong id="traineeStreak">4</strong><span>week streak</span></div></article>
+          <div class="trainee-stats"><article class="stat-card"><div class="stat-icon green">✓</div><div><span>Weekly completion</span><strong id="traineeCompletion">75%</strong><small>3 of 4 workouts</small></div></article><article class="stat-card"><div class="stat-icon blue">↗</div><div><span>Current momentum</span><strong>Strong</strong><small class="up">Keep it going</small></div></article><article class="stat-card"><div class="stat-icon violet">◷</div><div><span>Next check-in</span><strong>Friday</strong><small>With Maya</small></div></article></div>
+          <article class="panel coach-message"><div class="client-avatar mint">MA</div><div><span>NOTE FROM MAYA</span><p>Great consistency this week. Keep the final reps controlled and leave one rep in reserve on pressing movements.</p></div></article>
+          <article class="panel invite-accept"><div><span class="eyebrow">CONNECT WITH A TRAINER</span><h2>Have an invitation code?</h2><p>Enter the secure code from your trainer to connect your accounts.</p></div><form id="acceptInviteForm"><input name="code" minlength="20" maxlength="60" placeholder="Paste invitation code" required /><button class="primary-button" type="submit">Accept invitation</button><p class="form-error" id="acceptInviteError" role="alert"></p></form></article>
+        </div>
+      </section>
+
+      <section class="page" id="workouts-view">
+        <div class="workout-header"><div><p class="eyebrow">TODAY'S WORKOUT</p><h1>Upper Body Strength</h1><p>Prescribed targets and actual performance are stored separately.</p></div><div class="workout-actions"><button class="secondary-button" id="viewInstructions">View instructions</button><button class="primary-button" id="finishWorkout">Finish workout</button></div></div>
+        <div class="workout-summary"><div><span>Progress</span><strong id="exerciseProgress">2 of 4 exercises</strong></div><div class="progress-track large"><span id="workoutProgressBar" style="width:50%"></span></div><span id="progressPercent">50%</span></div>
+        <div id="exerciseList" class="exercise-list"></div>
+      </section>
+
+      <section class="page" id="clients-view">
+        <div class="section-heading"><div><p class="eyebrow">COACHING ROSTER</p><h1>Clients</h1><p>Keep each coaching relationship, status, and next action visible.</p></div><button class="primary-button" data-open-invite>＋ Invite client</button></div>
+        <div class="client-grid" id="clientGrid"></div>
+      </section>
+      <section class="page" id="progress-view">
+        <div class="section-heading"><div><p class="eyebrow">TEAM ANALYTICS</p><h1>Progress</h1><p>See adherence and momentum without digging through spreadsheets.</p></div><button class="date-button">Last 8 weeks⌄</button></div>
+        <div class="analytics-grid"><article class="panel chart-panel"><div class="panel-header"><div><h2>Weight trend</h2><p>Persisted progress entries</p></div><strong class="chart-total" id="progressLatest">—</strong></div><div class="line-chart" id="progressChart" aria-label="Weight progress chart"></div></article><article class="panel progress-entry-panel"><div class="panel-header"><div><h2>Add progress</h2><p>Weight or body measurement</p></div></div><form id="progressForm"><label>Metric<select name="metricType"><option value="weight">Weight</option><option value="waist">Waist</option><option value="body_fat">Body fat</option></select></label><label>Value<input name="value" type="number" min="0" max="10000" step="0.1" required /></label><label>Unit<select name="unit"><option value="kg">kg</option><option value="lb">lb</option><option value="cm">cm</option><option value="percent">%</option></select></label><button class="primary-button" type="submit">Save entry</button><p class="form-error" id="progressError" role="alert"></p></form></article></div>
+      </section>
+      <section class="page" id="nutrition-view">
+        <div class="section-heading"><div><p class="eyebrow">DAILY JOURNAL</p><h1>Nutrition</h1><p>Flexible, optional tracking that supports different coaching styles.</p></div></div>
+        <div class="nutrition-layout"><article class="panel"><div class="panel-header"><div><h2>Daily entries</h2><p>Newest first</p></div></div><div id="nutritionList"></div></article><article class="panel nutrition-entry-panel"><div class="panel-header"><div><h2>Add nutrition entry</h2><p>All numeric fields are optional</p></div></div><form id="nutritionForm"><label>Description<textarea name="description" maxlength="1000" rows="2" placeholder="Meals, context, or coaching note"></textarea></label><div class="macro-inputs"><label>Calories<input name="calories" type="number" min="0" /></label><label>Protein (g)<input name="proteinG" type="number" min="0" step="0.1" /></label><label>Carbs (g)<input name="carbsG" type="number" min="0" step="0.1" /></label><label>Water (ml)<input name="waterMl" type="number" min="0" /></label></div><button class="primary-button" type="submit">Save journal entry</button><p class="form-error" id="nutritionError" role="alert"></p></form></article></div>
+      </section>
+      <section class="page" id="messages-view"><div class="section-heading"><div><p class="eyebrow">COACHING CONVERSATION</p><h1>Messages</h1><p>Conversation within the active coaching relationship.</p></div></div><article class="panel messages-panel"><div id="messageList" class="message-list"></div><form id="messageForm"><label class="sr-only" for="messageInput">Message</label><textarea id="messageInput" name="body" maxlength="2000" rows="2" placeholder="Write a coaching message…" required></textarea><button class="primary-button" type="submit">Send</button><p class="form-error" id="messageError" role="alert"></p></form></article></section>
+      <section class="page trainer-only" id="builder-view">
+        <div class="section-heading"><div><p class="eyebrow">PROGRAM DESIGN</p><h1>Workout builder</h1><p>Create reusable workouts with clear prescriptions.</p></div><button class="primary-button" id="newTemplateButton">＋ New workout</button></div>
+        <div class="builder-layout"><section class="panel template-library"><div class="panel-header"><div><h2>Your templates</h2><p>Reusable and versioned</p></div></div><div id="templateList" class="template-list"></div></section><section class="panel builder-editor"><div class="panel-header"><div><h2>Create a workout</h2><p>Add 1–30 exercises</p></div></div><form id="templateForm"><label>Workout name<input name="name" maxlength="100" placeholder="e.g. Lower Body Power" required /></label><label>Description<textarea name="description" maxlength="500" rows="2" placeholder="Goal and coaching focus"></textarea></label><div class="exercise-builder-heading"><strong>Exercises</strong><button type="button" class="secondary-button" id="addExerciseButton">＋ Add exercise</button></div><div id="builderExercises"></div><p class="form-error" id="templateError" role="alert"></p><button class="primary-button" type="submit">Save workout template</button></form></section></div>
+      </section>
+      <section class="page trainer-only" id="billing-view"><div class="section-heading"><div><p class="eyebrow">PTRAINER PLANS</p><h1>Subscription</h1><p>Test checkout mode—no real payment is charged.</p></div><span class="status active" id="currentPlan">Starter trial</span></div><div class="pricing-grid"><article class="pricing-card"><span>STARTER</span><h2>$0</h2><p>Core coaching tools for evaluation.</p><button class="secondary-button" disabled>Current base</button></article><article class="pricing-card featured"><span>PRO</span><h2>$29<small>/month</small></h2><p>Unlimited clients, analytics, and messaging.</p><button class="primary-button" data-plan="PRO">Choose Pro — test mode</button></article><article class="pricing-card"><span>TEAM</span><h2>$79<small>/month</small></h2><p>Shared coaching workspace for small teams.</p><button class="primary-button" data-plan="TEAM">Choose Team — test mode</button></article></div></section>
+      <section class="page" id="settings-view"><div class="section-heading"><div><p class="eyebrow">ACCOUNT & PRIVACY</p><h1>Settings</h1><p>Manage your profile, preferences, and personal data.</p></div></div><div class="settings-grid"><article class="panel settings-panel"><div class="panel-header"><div><h2>Profile</h2><p>Information shown within your coaching relationship</p></div></div><form id="profileForm"><label>Full name<input name="name" maxlength="80" required /></label><label>Bio<textarea name="bio" maxlength="1000" rows="3"></textarea></label><label class="trainer-only">Specialties<input name="specialties" maxlength="500" /></label><label class="trainee-only">Goals<textarea name="goals" maxlength="1000" rows="3"></textarea></label><div class="settings-pair"><label>Preferred units<select name="preferredUnits"><option value="METRIC">Metric</option><option value="IMPERIAL">Imperial</option></select></label><label>Timezone<input name="timezone" maxlength="80" value="America/Toronto" /></label></div><button class="primary-button" type="submit">Save profile</button><p class="form-error" id="profileError" role="alert"></p></form></article><article class="panel privacy-panel"><div><h2>Your data</h2><p>Download a JSON copy of the personal information and records connected to your account.</p><button class="secondary-button" id="exportDataButton">Export my data</button></div><div><h2>Recent security activity</h2><div id="auditList" class="audit-list"></div></div><div class="danger-zone"><h2>Delete account</h2><p>This anonymizes your identity and ends access while preserving required historical records.</p><button class="danger-button" id="openDeleteAccount">Delete account…</button></div></article></div></section>
+    </main>
+  </div>
+
+  <dialog id="inviteDialog">
+    <form class="modal-card" id="inviteForm">
+      <button class="modal-close" type="button" aria-label="Close">×</button>
+      <div class="modal-icon">✦</div><p class="eyebrow">NEW CONNECTION</p><h2>Invite a client</h2><p>They’ll receive a secure invitation to create their account and connect with you.</p>
+      <label>Email address<input name="email" type="email" maxlength="254" autocomplete="email" placeholder="client@example.com" required /></label>
+      <label>Personal note<textarea name="note" maxlength="500" rows="3" placeholder="I’ve created a space for your training plan..."></textarea></label>
+      <p class="form-error" id="inviteError" role="alert"></p>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Send invitation</button></div>
+    </form>
+  </dialog>
+  <dialog id="notificationsDialog"><div class="modal-card notification-modal"><button class="modal-close" type="button" data-close-notifications aria-label="Close">×</button><p class="eyebrow">INBOX</p><h2>Notifications</h2><div id="notificationList"></div></div></dialog>
+  <dialog id="deleteAccountDialog"><form class="modal-card" id="deleteAccountForm"><button class="modal-close" type="button" data-close-delete aria-label="Close">×</button><p class="eyebrow">PERMANENT ACTION</p><h2>Delete Ptrainer account</h2><p>Your identity will be anonymized. Enter your password and the exact confirmation phrase.</p><label>Password<input name="password" type="password" autocomplete="current-password" required /></label><label>Confirmation<input name="confirmation" required placeholder="DELETE PTRAINER ACCOUNT" /></label><p class="form-error" id="deleteAccountError" role="alert"></p><div class="modal-actions"><button class="secondary-button" type="button" data-close-delete>Cancel</button><button class="danger-button" type="submit">Delete account permanently</button></div></form></dialog>
+  <dialog id="legalDialog"><div class="modal-card legal-modal"><button class="modal-close" type="button" data-close-legal aria-label="Close">×</button><p class="eyebrow" id="legalKicker">PTRAINER</p><h2 id="legalTitle">Privacy</h2><div id="legalContent"></div></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

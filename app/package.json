@@ -1,0 +1,15 @@
+{
+  "name": "ptrainer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "migrate": "node scripts/migrate.mjs",
+    "test": "node ../work/security-smoke.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.14",
+    "pg": "8.16.3"
+  }
+}

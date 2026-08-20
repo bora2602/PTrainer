@@ -1,0 +1,9 @@
+.DS_Store
+.pnpm-store/
+app/node_modules/
+app/data/
+app/.env
+app/*.log
+work/docker-config/
+work/rendered_v1/
+work/rendered_v2/
