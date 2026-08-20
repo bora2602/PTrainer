@@ -6,8 +6,8 @@ This document records which infrastructure concepts are appropriate for the curr
 
 | Capability | Decision |
 |---|---|
-| Database design | PostgreSQL schema with foreign keys, checks, unique constraints, versioned workout snapshots, migrations, and targeted indexes. PGlite is used only for persistent local development. |
-| ACID | Multi-step invitation acceptance, workout log/status updates, and account anonymization use database transactions. |
+| Database design | PostgreSQL schema with foreign keys, checks, unique constraints, versioned workout snapshots, migrations, and targeted indexes. Trainer edits update only an unstarted assignment snapshot, preserving templates and workout history. PGlite is used only for persistent local development. |
+| ACID | Multi-step invitation acceptance, direct workout creation, workout snapshot updates, workout log/status updates, and account anonymization use database transactions. |
 | REST | The browser uses a same-origin REST API with consistent JSON errors. |
 | Authentication | Scrypt password hashing, rotating server sessions, CSRF tokens, secure cookies in production, role checks, relationship checks, password reset expiry, and login rate limiting. |
 | Rate limiting | Authentication, invitations, password resets, and messages are limited. The current limiter is process-local and suitable for one application instance. |
