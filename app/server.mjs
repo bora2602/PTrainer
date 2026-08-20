@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initializeDatabase, query, transaction, databaseMode, closeDatabase } from './database.mjs';
+import { exerciseCatalog } from './exercise-catalog.mjs';
 
 const scrypt = promisify(scryptCallback);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -162,6 +163,9 @@ async function api(req,res,url){
     if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));await transaction(async tx=>{await tx('INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,$4,$5,$6)',[id('audit'),user.id,'ACCOUNT_DELETED','user',user.id,'{}']);await tx("UPDATE users SET email=$1,password_hash=$2,name='Deleted user',status='DELETED',updated_at=now() WHERE id=$3",[anonymousEmail,randomPassword,user.id]);await tx('DELETE FROM user_profiles WHERE user_id=$1',[user.id])});usersByEmail.delete(user.email);user.email=anonymousEmail;user.name='Deleted user';user.status='DELETED';for(const [sid,item]of sessions)if(item.userId===user.id)sessions.delete(sid);setSessionCookie(res,'',0);return json(res,200,{deleted:true});
   }
   if(req.method==='GET'&&url.pathname==='/api/dashboard')return json(res,200,await (user.role==='TRAINER'?trainerDashboard(user):traineeDashboard(user)));
+  if(req.method==='GET'&&url.pathname==='/api/exercises'){
+    if(!requireRole(res,user,'TRAINER'))return;const search=String(url.searchParams.get('q')||'').trim().toLocaleLowerCase().slice(0,100),limit=Math.min(250,Math.max(1,Number(url.searchParams.get('limit'))||60)),matches=exerciseCatalog.filter(item=>!search||item.name.toLocaleLowerCase().includes(search)||item.muscleGroup.toLocaleLowerCase().includes(search)||item.equipment.toLocaleLowerCase().includes(search));return json(res,200,{exercises:matches.slice(0,limit),total:matches.length,catalogTotal:exerciseCatalog.length,customNamesAllowed:true});
+  }
   if(req.method==='GET'&&url.pathname==='/api/workout-templates'){if(!requireRole(res,user,'TRAINER'))return;return json(res,200,{templates:[...workoutTemplates.values()].filter(t=>t.trainerId===user.id)})}
   if(req.method==='POST'&&url.pathname==='/api/workout-templates'){
     if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const name=typeof body.name==='string'?body.name.trim():'';

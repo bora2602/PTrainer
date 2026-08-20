@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b1f1a" />
   <title>Ptrainer — Fitness Coaching</title>
   <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.5.0" />
+  <link rel="stylesheet" href="styles.css?v=0.6.0" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -192,6 +192,6 @@
   <dialog id="legalDialog"><div class="modal-card legal-modal"><button class="modal-close" type="button" data-close-legal aria-label="Close">×</button><p class="eyebrow" id="legalKicker">PTRAINER</p><h2 id="legalTitle">Privacy</h2><div id="legalContent"></div></div></dialog>
   <dialog id="workoutEditorDialog"><form class="modal-card workout-editor-modal" id="workoutEditorForm"><button class="modal-close" type="button" data-close-workout-editor aria-label="Close">×</button><p class="eyebrow" id="workoutEditorKicker">TODAY'S WORKOUT</p><h2 id="workoutEditorTitle">Add workout</h2><p id="workoutEditorHelp">Create and assign a workout to the active client.</p><input name="mode" type="hidden" value="add" /><section class="workout-template-search" id="workoutTemplateSearch"><label for="workoutTemplateQuery">Find an existing workout</label><div class="template-search-box"><span aria-hidden="true">⌕</span><input id="workoutTemplateQuery" type="search" maxlength="100" autocomplete="off" placeholder="Search by workout or exercise name" /></div><div id="workoutTemplateResults" class="workout-template-results" aria-live="polite"></div></section><div class="workout-editor-basics"><label>Workout name<input name="name" maxlength="100" placeholder="e.g. Full Body Strength" required /></label><label>Workout date<input name="dueDate" type="date" required /></label></div><label>Description<textarea name="description" maxlength="500" rows="2" placeholder="Goal and coaching instructions"></textarea></label><div class="exercise-builder-heading"><strong>Exercises</strong><button class="secondary-button" id="addWorkoutExerciseButton" type="button">＋ Add exercise</button></div><div id="workoutEditorExercises"></div><p class="form-error" id="workoutEditorError" role="alert"></p><div class="modal-actions"><button class="secondary-button" type="button" data-close-workout-editor>Cancel</button><button class="primary-button" id="saveWorkoutButton" type="submit">Assign workout</button></div></form></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=0.5.0"></script>
+  <script src="app.js?v=0.6.0"></script>
 </body>
 </html>
