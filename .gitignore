@@ -9,3 +9,4 @@ work/docker-config/
 work/rendered_v1/
 work/rendered_v2/
 package-lock.json
+/dist/

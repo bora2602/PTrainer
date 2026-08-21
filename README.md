@@ -17,6 +17,22 @@ Demo accounts:
 - Trainer: `trainer@ptrainer.local` / `DemoTrainer1!`
 - Trainee: `trainee@ptrainer.local` / `DemoTrainee1!`
 
+## Run with no server at all
+
+Ptrainer can also be built as a static bundle that runs entirely in the browser
+— the frontend, `server.mjs`, and a WebAssembly PostgreSQL — with GitHub Pages
+as the only host:
+
+```
+cd app && pnpm install
+cd .. && node scripts/build-pages.mjs && node scripts/preview-pages.mjs
+```
+
+Every visitor gets their own private in-browser database, so this is a
+demonstration rather than a multi-user deployment. See
+[the GitHub Pages notes](docs/github-pages.md) for how it works and what it
+cannot do.
+
 ## Layout
 
 - [app/](app/) — application source, `Dockerfile`, migrations, and [full documentation](app/README.md)
