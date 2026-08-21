@@ -34,7 +34,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: app
       - run: node scripts/build-pages.mjs
+      # enablement turns Pages on for the repository if it is not configured
+      # yet, so no manual Settings change is needed before the first deploy.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
