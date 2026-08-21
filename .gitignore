@@ -3,6 +3,7 @@
 app/node_modules/
 app/data/
 app/.env
+.env
 app/*.log
 work/docker-config/
 work/rendered_v1/
