@@ -1,6 +1,8 @@
 # Ptrainer
 
-Responsive fitness coaching pilot with trainer/trainee roles, invitations, searchable workout templates, a 198-movement offline exercise catalog with custom-name support, direct workout creation and pre-logging edits, workout assignment and logging, progress tracking, date-based meal and hydration journaling, daily nutrition targets and macro summaries, notifications, messaging, profiles, versioned privacy consent, personal-data awareness/export/deletion, and test-mode subscriptions.
+Responsive fitness coaching pilot with trainer/trainee roles, invitations, searchable workout templates, a 198-movement offline exercise catalog with custom-name support, direct workout creation and pre-logging edits, workout assignment and logging, progress tracking, date-based meal and hydration journaling, daily nutrition targets and macro summaries, packaged-food barcode lookup and compatible-device camera scanning, notifications, messaging, profiles, versioned privacy consent, personal-data awareness/export/deletion, and test-mode subscriptions.
+
+Packaged-food nutrition data is retrieved from [Open Food Facts](https://world.openfoodfacts.org). Configure `FOOD_API_USER_AGENT` with a valid application name and contact URL/email before deployment. Users should verify imported values against the product label.
 
 ## Run locally
 
