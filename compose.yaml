@@ -33,6 +33,7 @@ services:
       PRIVACY_ORGANIZATION: ${PRIVACY_ORGANIZATION:-}
       PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
       DATA_STORAGE_REGION: ${DATA_STORAGE_REGION:-}
+      FOOD_API_USER_AGENT: ${FOOD_API_USER_AGENT:-Ptrainer/0.1 (https://github.com/bora2602/PTrainer)}
     ports:
       - "127.0.0.1:4173:4173"
     depends_on:
