@@ -5,10 +5,17 @@ Responsive fitness coaching pilot with trainer/trainee roles, workout templates 
 ## Quick start
 
 ```
-docker compose up --build
+node scripts/up.mjs
 ```
 
-Then open `http://127.0.0.1:4173`.
+Starts the whole stack and opens `http://127.0.0.1:4173` in your browser once
+the app answers. Extra flags go straight through to compose, and `--no-open`
+skips the tab.
+
+`docker compose up --build` still works exactly as before — the wrapper exists
+only because a container has no way to reach the browser on your desktop, so
+something on the host has to open it. Either way, then open
+`http://127.0.0.1:4173`.
 
 That is the entire setup — Compose builds the app, starts PostgreSQL 16, waits for it to become healthy, and applies migrations at startup. No `.env` file and no local Node or pnpm install are needed.
 
@@ -38,6 +45,12 @@ volume and survives `docker compose down` and rebuilds; inspect it with
 the seeded demo accounts stay enabled and their passwords are published in this
 repository. See [the hosting runbook](docs/hosting-on-one-computer.md) for a
 fixed hostname, database inspection, and how to verify the lockdown.
+
+That printed `*.trycloudflare.com` address is random, changes on every restart,
+and Chrome frequently marks it as deceptive — the hostname is shared with every
+other free tunnel, phishing kits included. To get a stable name like
+`ptrainer.your-domain.com` and no warning, point a domain you own at a named
+tunnel: [Why the browser says "Dangerous"](docs/hosting-on-one-computer.md#why-the-browser-says-dangerous-on-a-quick-tunnel).
 
 ## Layout
 

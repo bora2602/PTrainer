@@ -67,6 +67,34 @@ tunnel, without losing the hostname):
 docker compose up -d --no-deps --wait app
 ```
 
+### Why the browser says "Dangerous" on a quick tunnel
+
+Chrome will often flag `something-random.trycloudflare.com` as deceptive, with
+a "Check your passwords" prompt after you sign in. This is not a certificate
+problem — the certificate really is valid, and Chrome will tell you so if you
+expand the warning. It is Google Safe Browsing judging the *hostname*.
+
+Quick-tunnel hostnames are free, random, disposable, and shared by everyone
+using the feature, including a steady supply of phishing kits. A sign-in form
+on a throwaway subdomain is, from a reputation system's point of view,
+indistinguishable from the real thing it is trying to catch. Worse, the
+hostname changes every time the tunnel restarts, so it never gets the chance to
+build any reputation of its own.
+
+**The fix is a name you own.** Reputation attaches to a domain, and a domain
+you control keeps its history across restarts:
+
+1. Register a domain at any registrar — roughly $10–15/year. Skip the free
+   TLDs; they are heavily abused and carry the same flagging problem you are
+   trying to escape.
+2. Add it to Cloudflare on the free plan and point your nameservers there.
+3. **Zero Trust → Networks → Tunnels → Create a tunnel.** Add a public hostname
+   such as `ptrainer.your-domain.com`, routed to `http://app:4173`.
+4. Put the token and the matching origin in `.env`, as in the section above.
+
+Do not chase a review or an exception for a quick-tunnel hostname. Even if one
+were granted, the next restart hands you a different name and you start over.
+
 ## Before you give anyone the address
 
 Set `NODE_ENV=production` in `.env`, along with a 32+ character `METRICS_TOKEN`
