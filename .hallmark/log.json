@@ -1,0 +1,27 @@
+[
+  {
+    "date": "2026-08-22",
+    "scope": "app",
+    "macrostructure": "Marquee Hero (entry) / Workbench (app views)",
+    "theme": "aurora",
+    "theme_axes": "dark 11% + light 97% / grotesk-sans 600 / cool cyan H200",
+    "enrichment": "two canvas blooms, entry screen only",
+    "nav": "N3 side-rail",
+    "footer": "none (app shell)",
+    "design_system": "design.md",
+    "brief": "Ptrainer — trainer/trainee fitness coaching platform, retheme of app/index.html + app/styles.css to Aurora"
+  },
+  {
+    "date": "2026-08-22",
+    "scope": "app",
+    "macrostructure": "Marquee Hero (entry) / Workbench (app views)",
+    "theme": "lumen",
+    "drop": "night+day",
+    "theme_axes": "dark 13% + light 97% / classical-serif-lowercase / brass H50 + indigo H268",
+    "enrichment": "Tier-A CSS apparatus (filament chamber), auth screen only",
+    "nav": "N3 side-rail",
+    "footer": "none (app shell)",
+    "design_system": "design.md",
+    "brief": "Superseded — replaced by Aurora the same day; serif display and lowercase register were wrong for numeric app UI"
+  }
+]

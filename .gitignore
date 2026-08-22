@@ -11,3 +11,4 @@ work/rendered_v2/
 package-lock.json
 .agents
 /backups/
+.claude

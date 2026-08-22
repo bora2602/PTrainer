@@ -1,0 +1,199 @@
+/* Hallmark · genre: atmospheric · theme: Aurora · design-system: design.md · designed-as-app
+ * "The Linear/Vercel-after-dark register" — cool blue-green gradient on near-black,
+ * a single cyan accent with a teal-green chord 25° away, two blooms on the entry canvas.
+ *
+ * Night (:root, default)         — canonical Aurora, values taken from the upstream theme
+ * Day   (html[data-theme=light]) — derived at the same hue so the app keeps its toggle
+ *
+ * Axes — paper band: dark 11% / light 97% · display: grotesk-sans 600 · accent hue: cool (H 200)
+ * Every colour and font in styles.css and aurora.css must reference a token from this file.
+ */
+
+/* ─────────────────────────────────────────────────────────────
+   Aurora · Night — the canonical drop
+   ───────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces — a blue-green near-black, never neutral. Raised means lighter. */
+  --color-paper:       oklch(11% 0.025 200);
+  --color-paper-2:     oklch(15% 0.028 200);
+  --color-paper-3:     oklch(18% 0.030 200);
+  --color-paper-4:     oklch(21% 0.030 200);
+  --color-paper-sunk:  oklch(9%  0.024 200);
+  --color-rail:        oklch(13% 0.026 200);
+
+  /* Ink — Aurora's four-step ladder */
+  --color-faint:       oklch(60% 0.018 200);   /* 5.2:1 on paper */
+  --color-muted:       oklch(74% 0.014 200);
+  --color-ink-2:       oklch(82% 0.012 200);
+  --color-ink:         oklch(96% 0.010 200);
+
+  /* Rules */
+  --color-rule:        oklch(28% 0.022 200);
+  --color-rule-2:      oklch(38% 0.024 200);
+
+  /* Accent — one cyan signal */
+  --color-accent:      oklch(72% 0.170 200);
+  --color-accent-hi:   oklch(80% 0.150 200);
+  --color-accent-ink:  oklch(11% 0.025 200);   /* 9.3:1 on the accent fill */
+  --color-accent-weak: oklch(72% 0.170 200 / 0.12);
+  --color-accent-line: oklch(72% 0.170 200 / 0.34);
+
+  /* Teal-green chord — 25° away, so it reads as harmony not a second accent */
+  --color-accent-2:      oklch(64% 0.150 175);
+  --color-accent-2-weak: oklch(64% 0.150 175 / 0.14);
+
+  /* Blooms — entry canvas only, fixed, never animated */
+  --bloom-1: oklch(72% 0.170 200 / 0.16);
+  --bloom-2: oklch(64% 0.150 175 / 0.11);
+
+  /* Aurora's one component signature: a soft accent glow on the focal surface */
+  --glow-focal: 0 0 24px -10px oklch(72% 0.170 200 / 0.35);
+  --card-emit:    oklch(72% 0.170 200 / 0.045);
+  --card-emit-hi: oklch(72% 0.170 200 / 0.10);
+
+  /* Functional status. accent-2 carries "positive" honestly, so only two are added. */
+  --color-positive:      oklch(64% 0.150 175);
+  --color-positive-weak: oklch(64% 0.150 175 / 0.14);
+  --color-caution:       oklch(80% 0.140 75);
+  --color-caution-weak:  oklch(80% 0.140 75 / 0.14);
+  --color-critical:      oklch(70% 0.170 25);
+  --color-critical-weak: oklch(70% 0.170 25 / 0.14);
+
+  --color-focus:       oklch(72% 0.170 200);
+
+  --shadow-whisper:    0 1px 2px oklch(0% 0 0 / 0.32);
+  --shadow-card:       0 18px 44px -26px oklch(0% 0 0 / 0.55);
+  --shadow-modal:      0 40px 100px -30px oklch(0% 0 0 / 0.70);
+  --scrim:             oklch(7% 0.022 200 / 0.76);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Aurora · Day — derived, hue 200 held
+   Cyan sits at 48% here: at Night's 72% it fails on a light ground.
+   ───────────────────────────────────────────────────────────── */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --color-paper:       oklch(97%   0.010 200);
+  --color-paper-2:     oklch(99.2% 0.005 200);
+  --color-paper-3:     oklch(94.5% 0.012 200);
+  --color-paper-4:     oklch(90.5% 0.014 200);
+  --color-paper-sunk:  oklch(95%   0.012 200);
+  --color-rail:        oklch(94.5% 0.012 200);
+
+  --color-faint:       oklch(50% 0.014 200);   /* 5.5:1 on paper */
+  --color-muted:       oklch(46% 0.016 200);
+  --color-ink-2:       oklch(30% 0.018 200);
+  --color-ink:         oklch(18% 0.020 200);
+
+  --color-rule:        oklch(88% 0.012 200);
+  --color-rule-2:      oklch(79% 0.014 200);
+
+  --color-accent:      oklch(48% 0.160 200);   /* 5.0:1 on paper, 5.3:1 reversed */
+  --color-accent-hi:   oklch(40% 0.150 200);
+  --color-accent-ink:  oklch(99% 0.005 200);
+  --color-accent-weak: oklch(48% 0.160 200 / 0.10);
+  --color-accent-line: oklch(48% 0.160 200 / 0.30);
+
+  --color-accent-2:      oklch(46% 0.130 175);
+  --color-accent-2-weak: oklch(46% 0.130 175 / 0.12);
+
+  --bloom-1: oklch(48% 0.160 200 / 0.10);
+  --bloom-2: oklch(46% 0.130 175 / 0.07);
+
+  --glow-focal: 0 0 24px -12px oklch(48% 0.160 200 / 0.28);
+  --card-emit:    oklch(48% 0.160 200 / 0.035);
+  --card-emit-hi: oklch(48% 0.160 200 / 0.075);
+
+  --color-positive:      oklch(46% 0.130 175);
+  --color-positive-weak: oklch(46% 0.130 175 / 0.12);
+  --color-caution:       oklch(52% 0.130 75);
+  --color-caution-weak:  oklch(52% 0.130 75 / 0.12);
+  --color-critical:      oklch(52% 0.190 25);
+  --color-critical-weak: oklch(52% 0.190 25 / 0.12);
+
+  --color-focus:       oklch(48% 0.160 200);
+
+  --shadow-whisper:    0 1px 2px oklch(30% 0.02 200 / 0.06);
+  --shadow-card:       0 16px 40px -30px oklch(30% 0.03 200 / 0.26);
+  --shadow-modal:      0 40px 96px -34px oklch(30% 0.03 200 / 0.32);
+  --scrim:             oklch(30% 0.02 200 / 0.42);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Type — two families. Aurora's body face is Sentient; this build
+   uses Geist (the theme's own declared fallback) because the content
+   is numeric tables. See design.md § Deviations.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-label:   "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --display-weight: 600;
+
+  --text-xs:      0.6875rem;
+  --text-sm:      0.8125rem;
+  --text-base:    1rem;
+  --text-md:      1.125rem;
+  --text-lg:      1.375rem;
+  --text-xl:      1.75rem;
+  --text-2xl:     2.25rem;
+  --text-3xl:     3rem;
+  --text-4xl:     3.75rem;
+  --text-display:   clamp(3rem, 6vw + 1rem, 5.75rem);
+  --text-display-s: clamp(2rem, 3vw + 1rem, 3.5rem);
+  /* The borrowed big-counter scale — streaks, completion, macro totals */
+  --text-counter:   clamp(2.25rem, 3.5vw + 0.5rem, 3.5rem);
+
+  --tracking-display: -0.035em;
+  --tracking-tight:   -0.02em;
+  --tracking-label:    0.10em;
+
+  --lh-tight:   1.05;
+  --lh-snug:    1.18;
+  --lh-body:    1.55;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Space · radius · z · motion
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs:  0.5rem;
+  --space-sm:  0.75rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6.5rem;
+  --space-4xl: 9rem;
+
+  --page-gutter: clamp(1rem, 4vw, 2.5rem);
+
+  --radius-card:  12px;
+  --radius-input: 8px;
+  --radius-chip:  6px;
+  --radius-pill:  999px;
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-press:  cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  --dur-press: 70ms;
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long:  420ms;
+}

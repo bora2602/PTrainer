@@ -2,19 +2,38 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#0b1f1a" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#000607" />
   <title>Ptrainer — Fitness Coaching</title>
   <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css?v=0.7.0" />
+  <link rel="preload" href="assets/fonts/geist-400-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/fonts/geist-600-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="fonts.css?v=0.9.0" />
+  <link rel="stylesheet" href="tokens.css?v=0.9.0" />
+  <link rel="stylesheet" href="styles.css?v=0.9.0" />
+  <link rel="stylesheet" href="aurora.css?v=0.9.0" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
     <div class="auth-brand"><img src="assets/ptrainer-logo.svg" alt="" /><span>Ptrainer</span></div>
     <div class="auth-layout">
-      <div class="auth-intro"><p class="eyebrow">COACH BETTER. PROGRESS TOGETHER.</p><h1>One place for every workout, client, and win.</h1><p>Build programs, coach with context, and help clients see their progress clearly.</p><div class="auth-proof"><span>✓ Secure role-based access</span><span>✓ Fast mobile workout logging</span><span>✓ Clear progress history</span></div></div>
+      <div class="auth-intro">
+        <p class="eyebrow">Coaching platform</p>
+        <h1>The whole program, <em>tracked</em> in one place.</h1>
+        <p class="auth-lede">Build programs, coach with context, and help clients see their progress clearly.</p>
+        <ul class="auth-proof">
+          <li>Secure role-based access</li>
+          <li>Fast mobile workout logging</li>
+          <li>Clear progress history</li>
+        </ul>
+        <ul class="auth-figures">
+          <li><b>198</b><span class="meta-label">Movements</span></li>
+          <li><b>15</b><span class="meta-label">Muscle groups</span></li>
+          <li><b>36</b><span class="meta-label">Equipment kinds</span></li>
+        </ul>
+      </div>
       <div class="auth-card">
         <div class="auth-tabs"><button class="active" data-auth-tab="login">Sign in</button><button data-auth-tab="register">Create account</button></div>
         <form id="loginForm" class="auth-form">
@@ -93,20 +112,20 @@
       <section class="page active-view" id="dashboard-view">
         <div id="trainerDashboard">
         <div class="welcome-row">
-          <div><p class="eyebrow">TUESDAY, AUGUST 19</p><h1>Good morning, Maya <span>👋</span></h1><p>Here’s what’s happening with your clients today.</p></div>
-          <button class="date-button">◷ This week⌄</button>
+          <div><p class="eyebrow">Overview</p><h1>Good morning</h1><p>Here’s what’s happening with your clients today.</p></div>
+          <button class="date-button">This week</button>
         </div>
 
         <article class="focus-card">
-          <div class="focus-copy"><span class="focus-kicker">NEXT BEST ACTION</span><h2>Sarah is training right now</h2><p>Her lower-body session is in progress. Review the latest set data or leave a quick coaching note while it’s relevant.</p><div class="focus-actions"><button class="primary-button" data-go="workouts">Open live workout</button><button class="ghost-button" id="quickNoteButton">Add coaching note</button></div></div>
-          <div class="focus-metric"><div class="pulse-ring"><span>62%</span></div><strong>Session progress</strong><small>Started 28 minutes ago</small></div>
+          <div class="focus-copy"><span class="focus-kicker">Next best action</span><h2>Loading your coaching queue</h2><p>The next assigned session and its status will appear here.</p><div class="focus-actions"><button class="primary-button" data-go="workouts">Open workout</button><button class="ghost-button" id="quickNoteButton">Add coaching note</button></div></div>
+          <div class="focus-metric"><p class="stat__label">Completion rate</p><strong class="session-readout"><span>—</span></strong><small>—</small></div>
         </article>
 
         <div class="stat-grid">
-          <article class="stat-card"><div class="stat-icon green">◎</div><div><span>Active clients</span><strong id="activeClients">—</strong><small class="up">↗ 2 this month</small></div></article>
-          <article class="stat-card"><div class="stat-icon orange">✓</div><div><span>Workouts completed</span><strong id="workoutsCompleted">—</strong><small class="up">↗ 14% vs last week</small></div></article>
-          <article class="stat-card"><div class="stat-icon violet">◷</div><div><span>Completion rate</span><strong id="completionRate">—</strong><small>33 of 38 assigned</small></div></article>
-          <article class="stat-card"><div class="stat-icon blue">↗</div><div><span>Progress updates</span><strong id="progressUpdates">—</strong><small class="up">↗ 6 this week</small></div></article>
+          <article class="stat-card"><div><span>Active clients</span><strong id="activeClients">—</strong><small>—</small></div></article>
+          <article class="stat-card"><div><span>Workouts completed</span><strong id="workoutsCompleted">—</strong><small>—</small></div></article>
+          <article class="stat-card"><div><span>Completion rate</span><strong id="completionRate">—</strong><small>—</small></div></article>
+          <article class="stat-card"><div><span>Progress updates</span><strong id="progressUpdates">—</strong><small>—</small></div></article>
         </div>
 
         <div class="dashboard-grid">
@@ -127,7 +146,7 @@
               <button class="attention-item"><span class="attention-icon progress">↗</span><span><strong>New progress update</strong><small>Sarah Kim · 3 hours ago</small></span><span>›</span></button>
               <button class="attention-item"><span class="attention-icon note">✎</span><span><strong>Workout note added</strong><small>Jordan Lee · Yesterday</small></span><span>›</span></button>
             </div>
-            <div class="weekly-goal"><div><span>Weekly coaching goal</span><strong>8 of 10 check-ins</strong></div><div class="progress-track"><span style="width:80%"></span></div><small>2 more to reach your goal</small></div>
+            <div class="weekly-goal"><div><span>Weekly coaching goal</span><strong>8 of 10 check-ins</strong></div><div class="progress-track"><span data-w="80"></span></div><small>2 more to reach your goal</small></div>
           </article>
         </div>
 
@@ -142,7 +161,7 @@
         </article>
         </div>
         <div id="traineeDashboard" hidden>
-          <div class="welcome-row"><div><p class="eyebrow">YOUR TRAINING DAY</p><h1>Ready when you are <span>💪</span></h1><p>Your next workout and weekly momentum at a glance.</p></div><span class="coach-chip">Coach: Maya Adams</span></div>
+          <div class="welcome-row"><div><p class="eyebrow">Your training day</p><h1>Ready when you are</h1><p>Your next workout and weekly momentum at a glance.</p></div><span class="coach-chip">Coach: —</span></div>
           <article class="trainee-hero"><div><span class="focus-kicker">TODAY'S WORKOUT</span><h2 id="traineeWorkoutName">Upper Body Strength</h2><p id="traineeWorkoutMeta">4 exercises · Approximately 45 minutes</p><button class="primary-button" data-go="workouts">Start workout →</button></div><div class="streak"><strong id="traineeStreak">4</strong><span>week streak</span></div></article>
           <div class="trainee-stats"><article class="stat-card"><div class="stat-icon green">✓</div><div><span>Weekly completion</span><strong id="traineeCompletion">75%</strong><small>3 of 4 workouts</small></div></article><article class="stat-card"><div class="stat-icon blue">↗</div><div><span>Current momentum</span><strong>Strong</strong><small class="up">Keep it going</small></div></article><article class="stat-card"><div class="stat-icon violet">◷</div><div><span>Next check-in</span><strong>Friday</strong><small>With Maya</small></div></article></div>
           <article class="panel coach-message"><div class="client-avatar mint">MA</div><div><span>NOTE FROM MAYA</span><p>Great consistency this week. Keep the final reps controlled and leave one rep in reserve on pressing movements.</p></div></article>
@@ -152,7 +171,7 @@
 
       <section class="page" id="workouts-view">
         <div class="workout-header"><div><p class="eyebrow">TODAY'S WORKOUT</p><h1>Upper Body Strength</h1><p>Prescribed targets and actual performance are stored separately.</p></div><div class="workout-actions"><button class="primary-button trainer-only" id="addWorkoutButton">＋ Add workout</button><button class="secondary-button trainer-only" id="editWorkoutButton">Edit workout</button><button class="secondary-button" id="viewInstructions">View instructions</button><button class="primary-button" id="finishWorkout">Finish workout</button></div></div>
-        <div class="workout-summary"><div><span>Progress</span><strong id="exerciseProgress">2 of 4 exercises</strong></div><div class="progress-track large"><span id="workoutProgressBar" style="width:50%"></span></div><span id="progressPercent">50%</span></div>
+        <div class="workout-summary"><div><span>Progress</span><strong id="exerciseProgress">2 of 4 exercises</strong></div><div class="progress-track large"><span id="workoutProgressBar" data-w="50"></span></div><span id="progressPercent">50%</span></div>
         <div id="exerciseList" class="exercise-list"></div>
       </section>
 

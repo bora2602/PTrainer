@@ -1,0 +1,756 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V4
+ * Hallmark · genre: atmospheric · macrostructure: Marquee Hero (entry) / Workbench (app views)
+ * theme: Aurora · drops: Night (default) + Day ([data-theme=light])
+ * nav: N3 side-rail · footer: none (app shell) · enrichment: two canvas blooms, entry screen only
+ * design-system: design.md · designed-as-app
+ *
+ * The Aurora signature layer. tokens.css holds the palette; styles.css carries
+ * layout inherited from the previous build; this file carries the theme's voice:
+ * Linear-after-dark restraint — flat surfaces, hairlines, one cyan signal,
+ * blooms on the entry canvas and nowhere near the data.
+ */
+
+/* ═══════════════════════════════════════════════════════════════
+   1 · Foundation
+   ═══════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  overflow-x: clip;                 /* never `hidden` — it breaks position: sticky */
+}
+
+html {
+  font-family: var(--font-body);    /* stops anything the cascade misses hitting a UA serif */
+}
+
+button,
+input,
+textarea,
+select,
+optgroup {
+  font-family: inherit;             /* form controls don't inherit font by default */
+}
+
+body {
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3,
+.section-heading h1,
+.welcome-row h1 {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   2 · Type — grotesk display, mono machine labels
+   Aurora is sentence case throughout. No lowercase register, no italic.
+   ═══════════════════════════════════════════════════════════════ */
+
+h1, h2, h3,
+.section-heading h1,
+.welcome-row h1,
+.workout-header h1,
+.auth-intro h1,
+.panel-header h2,
+.focus-copy h2,
+.modal-card h2,
+.settings-panel h2,
+.auth-form h2 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-style: normal;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-snug);
+  color: var(--color-ink);
+}
+
+.section-heading h1,
+.welcome-row h1,
+.workout-header h1 {
+  font-size: clamp(1.75rem, 1.8vw + 1rem, 2.25rem);
+  line-height: var(--lh-tight);
+  margin: 0 0 var(--space-2xs);
+}
+
+.panel-header h2,
+.focus-copy h2,
+.modal-card h2,
+.settings-panel h2 {
+  font-size: var(--text-lg);
+  letter-spacing: var(--tracking-tight);
+}
+.auth-form h2 { font-size: var(--text-xl); margin: var(--space-3xs) 0; }
+
+/* Section lede */
+.section-heading > div > p,
+.welcome-row > div > p,
+.panel-header p {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  max-width: 62ch;
+  margin: 0;
+}
+
+/* Machine labels — the only uppercase surface */
+.eyebrow,
+.focus-kicker,
+.meta-label,
+.stat__label,
+.stat-card span,
+.nutrition-date-filter,
+.secure-status,
+.status,
+.exercise-tag,
+.weekly-goal,
+.set-number,
+th {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-faint);
+  line-height: 1.4;
+}
+.eyebrow { margin: 0 0 var(--space-sm); }
+
+/* ═══════════════════════════════════════════════════════════════
+   3 · Surfaces — flat and hairlined. Aurora's depth is the canvas,
+   not per-card glows; only the one focal surface carries a glow.
+   ═══════════════════════════════════════════════════════════════ */
+
+.panel,
+.stat-card,
+.workout-summary,
+.exercise-card,
+.client-profile,
+.pricing-card,
+.invite-accept,
+.nutrition-summary-card,
+.settings-panel {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+  transition: border-color var(--dur-short) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stat-card,
+  .pricing-card,
+  .nutrition-summary-card {
+    transition:
+      transform var(--dur-short) var(--ease-out),
+      border-color var(--dur-short) var(--ease-out),
+      background-color var(--dur-short) var(--ease-out);
+  }
+  .stat-card:hover,
+  .pricing-card:hover,
+  .nutrition-summary-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-rule-2);
+    background-color: var(--color-paper-3);
+  }
+}
+
+/* Aurora's one component signature — a soft accent glow, focal surfaces only */
+.auth-card,
+.focus-card {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-focal);
+}
+
+/* ── The borrowed big counter — streaks, completion, macro totals ── */
+.stat-card strong,
+.trainee-stats strong,
+.nutrition-summary-card strong,
+.session-readout,
+.streak strong {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-counter);
+  line-height: 1;
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4 · Side rail (N3)
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (min-width: 45.0625rem) {
+  .app-shell {
+    background: linear-gradient(to right,
+      var(--color-rail) 0 228px,
+      var(--color-rule) 228px 229px,
+      var(--color-paper) 229px);
+  }
+}
+
+/* One faint canvas wash so app views keep Aurora's atmosphere. It sits behind
+   opaque cards only — every text surface resolves to a flat token, which is
+   what keeps contrast a fixed number rather than a function of position. */
+.app-shell main {
+  background:
+    radial-gradient(52% 34% at 88% 0%, var(--card-emit) 0%, transparent 62%),
+    var(--color-paper);
+  min-height: 100dvh;
+}
+
+.sidebar {
+  background: var(--color-rail);
+  border-inline-end: 1px solid var(--color-rule);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.brand span {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-ink);
+}
+
+.nav-item {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-muted);
+  border-radius: var(--radius-input);
+  white-space: nowrap;
+  position: relative;
+  background: transparent;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+.nav-item .icon { color: var(--color-faint); font-size: 15px; }
+.nav-item:hover { background: var(--color-paper-3); color: var(--color-ink-2); }
+
+.nav-item.active {
+  background: var(--color-accent-weak);
+  color: var(--color-ink);
+  box-shadow: none;
+}
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 18%;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+}
+.nav-item.active .icon { color: var(--color-accent); }
+
+.nav-count {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  background: var(--color-paper-4);
+  color: var(--color-muted);
+  border-radius: var(--radius-chip);
+}
+
+.profile-mini { border-top: 1px solid var(--color-rule); }
+.avatar,
+.client-avatar {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  background: var(--color-paper-4);
+  color: var(--color-accent);
+  border-radius: var(--radius-input);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   5 · Topbar
+   ═══════════════════════════════════════════════════════════════ */
+
+.topbar {
+  background: var(--color-paper);
+  border-bottom: 1px solid var(--color-rule);
+  box-shadow: none;
+}
+.search input { font-family: var(--font-body); font-size: var(--text-sm); }
+.search input::placeholder { color: var(--color-faint); }
+.secure-status { color: var(--color-muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   6 · Controls — pills, eight states, physical press
+   ═══════════════════════════════════════════════════════════════ */
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.danger-button,
+.date-button,
+.icon-button {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out),
+    box-shadow var(--dur-micro) var(--ease-out),
+    transform var(--dur-press) var(--ease-press);
+}
+
+/* `.focus-card .primary-button` in the inherited sheet is (0,2,0) and sets
+   near-white on the accent fill — 1.95:1. Match its specificity. */
+.primary-button,
+.focus-card .primary-button {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border: 1px solid var(--color-accent);
+  box-shadow: var(--shadow-whisper);
+}
+.primary-button:hover { background: var(--color-accent-hi); border-color: var(--color-accent-hi); }
+
+/* The borrowed press — physical confirmation for a tap taken mid-set */
+.primary-button:active,
+.exercise-check:active,
+.secondary-button:active,
+.danger-button:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.primary-button:disabled,
+.primary-button[aria-disabled="true"] {
+  background: var(--color-paper-4);
+  border-color: var(--color-rule);
+  color: var(--color-faint);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.primary-button[data-state="loading"] { color: transparent; position: relative; }
+.primary-button[data-state="loading"]::after {
+  content: "";
+  position: absolute; inset: 0; margin: auto;
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 1.5px solid var(--color-accent-ink);
+  border-top-color: transparent;
+  animation: aurora-spin 700ms linear infinite;
+}
+
+.secondary-button,
+.date-button,
+.icon-button {
+  background: transparent;
+  color: var(--color-ink-2);
+  border: 1px solid var(--color-rule-2);
+}
+.secondary-button:hover,
+.date-button:hover,
+.icon-button:hover {
+  border-color: var(--color-accent-line);
+  color: var(--color-ink);
+  background: var(--color-paper-3);
+}
+.secondary-button:disabled { color: var(--color-faint); border-color: var(--color-rule); cursor: not-allowed; }
+
+.ghost-button,
+.text-button {
+  background: transparent;
+  border: 0;
+  color: var(--color-accent);
+  padding-inline: 0;
+}
+.ghost-button:hover,
+.text-button:hover { color: var(--color-accent-hi); text-decoration: underline; text-underline-offset: 3px; }
+
+.danger-button {
+  background: transparent;
+  color: var(--color-critical);
+  border: 1px solid var(--color-critical);
+}
+.danger-button:hover { background: var(--color-critical-weak); }
+
+/* The set-complete checkbox is a primary tap target mid-workout */
+.exercise-check {
+  border-radius: var(--radius-input);
+  border: 1.5px solid var(--color-rule-2);
+  transition: background-color var(--dur-micro) var(--ease-out),
+              border-color var(--dur-micro) var(--ease-out),
+              transform var(--dur-press) var(--ease-press);
+}
+.exercise-card.completed .exercise-check {
+  background: var(--color-accent-2);
+  border-color: var(--color-accent-2);
+}
+
+/* Inputs */
+input,
+textarea,
+select {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+input:focus,
+textarea:focus,
+select:focus { border-color: var(--color-accent-line); }
+input::placeholder,
+textarea::placeholder { color: var(--color-faint); }
+input:disabled,
+textarea:disabled,
+select:disabled { background: var(--color-paper-3); color: var(--color-faint); cursor: not-allowed; }
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] { border-color: var(--color-critical); }
+
+label { font-size: var(--text-sm); color: var(--color-muted); }
+
+.form-error {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-critical);
+}
+.form-error:empty { display: none; }
+
+/* Focus — instant, never animated */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  transition: none;
+}
+
+@media (pointer: coarse) {
+  .primary-button,
+  .secondary-button,
+  .danger-button,
+  .date-button,
+  .icon-button,
+  .nav-item { min-height: 44px; }
+  .exercise-check { min-width: 32px; min-height: 32px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   7 · Tables and data
+   ═══════════════════════════════════════════════════════════════ */
+
+table { font-variant-numeric: tabular-nums; }
+th {
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule);
+}
+td {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.status,
+.exercise-tag,
+.weekly-goal,
+.set-number { border-radius: var(--radius-chip); }
+
+.status.upcoming { color: var(--color-muted);    background: var(--color-paper-4); }
+.status.warning  { color: var(--color-caution);  background: var(--color-caution-weak); }
+.status.active   { color: var(--color-accent);   background: var(--color-accent-weak); }
+.status.done     { color: var(--color-positive); background: var(--color-positive-weak); }
+.up              { color: var(--color-positive); }
+
+.progress-track  { background: var(--color-paper-4); border-radius: var(--radius-pill); }
+.progress-track span,
+.mini-progress i { background: var(--color-accent); border-radius: var(--radius-pill); }
+
+/* ═══════════════════════════════════════════════════════════════
+   8 · Entry canvas — the only place blooms are allowed
+   Two cool blooms (cyan + teal-green), fixed, never animated.
+   App views stay flat so contrast is a fixed value, not a position.
+   ═══════════════════════════════════════════════════════════════ */
+
+.auth-screen {
+  min-height: 100dvh;
+  background:
+    radial-gradient(58% 44% at 78% 14%, var(--bloom-1) 0%, transparent 68%),
+    radial-gradient(48% 38% at 12% 88%, var(--bloom-2) 0%, transparent 66%),
+    var(--color-paper);
+  background-attachment: fixed;
+  color: var(--color-ink);
+  overflow: clip;
+}
+
+.auth-brand span {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-lg);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-ink);
+}
+
+.auth-intro { text-align: start; }
+.auth-layout {
+  min-height: auto;
+  align-items: start;
+  gap: clamp(2rem, 6vw, 6rem);
+  padding-block: var(--space-2xl);
+}
+
+.auth-intro h1 {
+  font-size: var(--text-display-s);
+  line-height: var(--lh-tight);
+  max-width: 18ch;
+  margin: 0 0 var(--space-md);
+}
+/* One cyan word, carried by colour — never italic, never a gradient */
+.auth-intro h1 em {
+  font-style: normal;
+  color: var(--color-accent);
+}
+
+.auth-lede {
+  color: var(--color-muted);
+  font-size: var(--text-md);
+  max-width: 46ch;
+  line-height: var(--lh-body);
+}
+
+.auth-proof {
+  display: grid;
+  gap: var(--space-xs);
+  margin: var(--space-lg) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.auth-proof li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: var(--space-xs);
+  align-items: baseline;
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+.auth-proof li::before {
+  content: "—";
+  color: var(--color-accent);
+  font-family: var(--font-label);
+}
+
+/* Honest catalog figures, read off exercise-catalog.mjs */
+.auth-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+  margin: var(--space-xl) 0 0;
+  padding: var(--space-md) 0 0;
+  border-top: 1px solid var(--color-rule);
+  list-style: none;
+}
+.auth-figures li { display: grid; gap: var(--space-3xs); }
+.auth-figures b {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-xl);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.auth-tabs button {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.auth-tabs button.active { color: var(--color-ink); background: var(--color-paper-3); }
+
+.demo-divider span {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+.auth-legal {
+  position: static;
+  margin: var(--space-lg) 0 0;
+  justify-content: flex-start;
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.03em;
+  color: var(--color-faint);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   9 · Modals
+   ═══════════════════════════════════════════════════════════════ */
+
+.modal-card,
+dialog {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+dialog::backdrop { background: var(--scrim); }
+
+.modal-icon {
+  background: var(--color-accent-weak);
+  color: var(--color-accent);
+  border-radius: var(--radius-input);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   10 · Corrections to inherited layout
+   ═══════════════════════════════════════════════════════════════ */
+
+/* The inherited focus card carried a 240px decorative ring. Atmospheric
+   depth comes from the canvas, not from an orbiting shape. */
+.focus-card::after { content: none; }
+
+.stat-card { display: block; padding: var(--space-lg); }
+.stat-card > div { display: grid; gap: var(--space-2xs); }
+.stat-card small {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* `.focus-metric strong` (0,1,1) outranks a bare class, so scope the readout */
+.focus-metric {
+  min-width: 150px;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2xs);
+  align-content: center;
+  padding-inline-start: var(--space-lg);
+  border-inline-start: 1px solid var(--color-rule);
+}
+.focus-metric .session-readout {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-counter);
+  line-height: 1;
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  margin: 0;
+}
+.focus-metric small {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+  margin: 0;
+}
+
+.section-heading,
+.welcome-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+.section-heading > div,
+.welcome-row > div { min-width: 0; }
+.panel-header { flex-wrap: wrap; gap: var(--space-sm); }
+
+.coach-chip {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  background: var(--color-paper-3);
+  color: var(--color-muted);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-pill);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   11 · Motion — one orchestrated entrance, nothing loops
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes aurora-spin { to { transform: rotate(360deg); } }
+@keyframes aurora-reveal { to { opacity: 1; transform: none; } }
+
+.page.active-view > * {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: aurora-reveal var(--dur-long) var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.page.active-view > *:nth-child(1) { --i: 0; }
+.page.active-view > *:nth-child(2) { --i: 1; }
+.page.active-view > *:nth-child(3) { --i: 2; }
+.page.active-view > *:nth-child(4) { --i: 3; }
+.page.active-view > *:nth-child(n+5) { --i: 4; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+    scroll-behavior: auto !important;
+  }
+  .page.active-view > * { opacity: 1; transform: none; animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   12 · Responsive guards — verified at 320 / 375 / 414 / 768
+   ═══════════════════════════════════════════════════════════════ */
+
+.stat-grid,
+.client-grid,
+.dashboard-grid,
+.settings-grid,
+.nutrition-summary,
+.pricing-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+}
+
+/* The inherited sheet centres the auth hero below 850px; Aurora stays left-biased */
+@media (max-width: 53.125rem) {
+  .auth-intro,
+  .auth-brand { text-align: start; justify-content: flex-start; }
+  .auth-intro h1,
+  .auth-intro > p { margin-inline: 0; }
+  .auth-proof { justify-content: flex-start; }
+}
+
+@media (max-width: 48rem) {
+  .auth-intro h1 { max-width: none; }
+
+  .section-heading,
+  .panel-header,
+  .welcome-row { flex-direction: column; align-items: stretch; }
+
+  .focus-metric {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    padding-block-start: var(--space-md);
+    border-block-start: 1px solid var(--color-rule);
+  }
+
+  /* A fixed background on iOS repaints on every scroll frame */
+  .auth-screen { background-attachment: scroll; }
+}
+
+@media (max-width: 26.5rem) {
+  .auth-proof li { grid-template-columns: 12px minmax(0, 1fr); }
+  .auth-figures { gap: var(--space-md); }
+}

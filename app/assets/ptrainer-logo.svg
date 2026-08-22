@@ -1,8 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">Ptrainer logo</title>
   <desc id="desc">A strong letter P with an upward training motion</desc>
-  <rect width="64" height="64" rx="18" fill="#D8F36A"/>
-  <path fill="#10251E" d="M18 49V15h18.2c10.3 0 16.8 5.9 16.8 15.1 0 9.1-6.5 15-16.8 15H29V49H18Zm11-13.3h6.1c4.4 0 6.9-2 6.9-5.6 0-3.7-2.5-5.7-6.9-5.7H29v11.3Z"/>
-  <path d="m34 46 14-14" stroke="#1F7A5B" stroke-width="4.5" stroke-linecap="round"/>
-  <path d="M43 32h5v5" fill="none" stroke="#1F7A5B" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Aurora palette. This mark loads as an image, so it cannot read CSS custom
+       properties; the two values below are the sRGB equivalents of the tokens
+       color-accent oklch(72% 0.170 200) and color-paper oklch(11% 0.025 200).
+       Cyan on near-black reads correctly against both the Night and Day drops. -->
+  <rect width="64" height="64" rx="12" fill="#00C2CE"/>
+  <path fill="#000607" d="M18 49V15h18.2c10.3 0 16.8 5.9 16.8 15.1 0 9.1-6.5 15-16.8 15H29V49H18Zm11-13.3h6.1c4.4 0 6.9-2 6.9-5.6 0-3.7-2.5-5.7-6.9-5.7H29v11.3Z"/>
+  <path d="m34 46 14-14" stroke="#000607" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M43 32h5v5" fill="none" stroke="#000607" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
