@@ -18,6 +18,13 @@ const PRIVACY_ORGANIZATION = String(process.env.PRIVACY_ORGANIZATION || 'Ptraine
 const PRIVACY_CONTACT_EMAIL = String(process.env.PRIVACY_CONTACT_EMAIL || 'privacy@ptrainer.local');
 const DATA_STORAGE_REGION = String(process.env.DATA_STORAGE_REGION || 'Local development device');
 if(IS_PRODUCTION&&(!process.env.DATABASE_URL||!APP_ORIGIN.startsWith('https://')||String(process.env.METRICS_TOKEN||'').length<32||PRIVACY_ORGANIZATION==='Ptrainer controlled pilot'||!PRIVACY_CONTACT_EMAIL.includes('@')||PRIVACY_CONTACT_EMAIL.endsWith('.local')||DATA_STORAGE_REGION==='Local development device'))throw new Error('Production requires database, HTTPS, metrics, privacy-organization/contact, and storage-region configuration.');
+// Behind a tunnel or reverse proxy the socket address is the proxy, so every
+// visitor would share one rate-limit bucket. Only enable TRUST_PROXY when the
+// app port is not reachable directly, otherwise clients can spoof these headers.
+const TRUST_PROXY = String(process.env.TRUST_PROXY || '') === 'true';
+// Browsers send the hostname they were served from; a proxied deployment is
+// reached by a name that is not APP_ORIGIN, so extra origins can be allowed.
+const ALLOWED_ORIGINS = new Set([APP_ORIGIN, ...String(process.env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)]);
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const COOKIE = 'ptrainer_sid';
 const SESSION_TTL = 60 * 60 * 1000;
@@ -77,12 +84,34 @@ const storedTemplates=await query('SELECT id,trainer_id,name,description,version
 const storedAssignments=await query('SELECT id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at FROM assigned_workouts');for(const row of storedAssignments.rows)assignments.set(row.id,{id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,status:row.status,createdAt:row.created_at});
 if(!IS_PRODUCTION){
   const trainer=await createUser({name:'Maya Adams',email:'trainer@ptrainer.local',password:'DemoTrainer1!',role:'TRAINER'}),trainee=await createUser({name:'Jordan Lee',email:'trainee@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'});
+  // A previous production start suspends these; running outside production is
+  // what re-enables them, so the two modes stay symmetric.
+  for(const demoUser of [trainer,trainee]){
+    if(demoUser.status!=='ACTIVE'){
+      demoUser.status='ACTIVE';
+      await query("UPDATE users SET status='ACTIVE',updated_at=now() WHERE id=$1",[demoUser.id]);
+      log('info','demo_account_reactivated',{email:demoUser.email});
+    }
+  }
   if(!relationships.has(`${trainer.id}:${trainee.id}`)){const relationship={trainerId:trainer.id,traineeId:trainee.id,status:'ACTIVE',createdAt:new Date().toISOString()};await query('INSERT INTO trainer_trainee_relationships(trainer_id,trainee_id,status,created_at,updated_at) VALUES($1,$2,$3,$4,$4)',[relationship.trainerId,relationship.traineeId,relationship.status,relationship.createdAt]);relationships.set(`${trainer.id}:${trainee.id}`,relationship)}
   let seedTemplate=[...workoutTemplates.values()].find(item=>item.trainerId===trainer.id&&item.name==='Upper Body Strength');if(!seedTemplate){seedTemplate={id:id('tpl'),trainerId:trainer.id,name:'Upper Body Strength',description:'A balanced upper-body strength session.',exercises:[{name:'Barbell bench press',sets:4,reps:8,restSeconds:90},{name:'Single-arm dumbbell row',sets:3,reps:10,restSeconds:75},{name:'Seated shoulder press',sets:3,reps:10,restSeconds:75},{name:'Cable triceps extension',sets:3,reps:12,restSeconds:60}],version:1,createdAt:new Date().toISOString()};await query('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[seedTemplate.id,seedTemplate.trainerId,seedTemplate.name,seedTemplate.description,seedTemplate.version,JSON.stringify(seedTemplate.exercises),seedTemplate.createdAt]);workoutTemplates.set(seedTemplate.id,seedTemplate)}
   let seedAssignment=assignments.get('assigned_demo_1');if(!seedAssignment){seedAssignment={id:'assigned_demo_1',templateId:seedTemplate.id,templateSnapshot:structuredClone(seedTemplate),trainerId:trainer.id,traineeId:trainee.id,dueDate:new Date().toISOString().slice(0,10),status:'ASSIGNED',createdAt:new Date().toISOString()};await query('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[seedAssignment.id,seedAssignment.templateId,seedAssignment.trainerId,seedAssignment.traineeId,JSON.stringify(seedAssignment.templateSnapshot),seedAssignment.dueDate,seedAssignment.status,seedAssignment.createdAt]);assignments.set(seedAssignment.id,seedAssignment)}
   const progressCount=await query('SELECT count(*)::int AS count FROM progress_entries WHERE trainee_id=$1',[trainee.id]);if(Number(progressCount.rows[0].count)===0){for(const [days,value]of [[56,82.4],[42,81.5],[28,80.8],[14,79.9],[0,79.2]])await query("INSERT INTO progress_entries(id,trainee_id,author_id,metric_type,value,unit,measured_at,note) VALUES($1,$2,$2,'weight',$3,'kg',$4,'')",[id('progress'),trainee.id,value,new Date(Date.now()-days*86400000).toISOString()])}
   const nutritionCount=await query('SELECT count(*)::int AS count FROM nutrition_entries WHERE trainee_id=$1',[trainee.id]);if(Number(nutritionCount.rows[0].count)===0)await query("INSERT INTO nutrition_entries(id,trainee_id,author_id,entry_date,entry_type,description,calories,protein_g,carbs_g,fat_g,water_ml) VALUES($1,$2,$2,CURRENT_DATE,'DAILY','Balanced training day',1840,132,188,58,2100)",[id('nutrition'),trainee.id]);
   const notificationCount=await query('SELECT count(*)::int AS count FROM notifications WHERE recipient_id=$1',[trainer.id]);if(Number(notificationCount.rows[0].count)===0)await query("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'PROGRESS_ADDED','New progress update','Jordan logged a new weight entry.'),($3,$2,'WORKOUT_COMPLETED','Workout completed','Jordan completed Upper Body Strength.')",[id('notification'),trainer.id,id('notification')]);
+} else {
+  // A database that was ever started outside production still holds the demo
+  // accounts, and their passwords are published in this repository. Skipping the
+  // seed is not enough - the existing rows have to stop being usable. Suspending
+  // rather than deleting keeps any real data attached to them recoverable.
+  for(const email of ['trainer@ptrainer.local','trainee@ptrainer.local']){
+    const demoId=usersByEmail.get(email),demoUser=demoId&&users.get(demoId);
+    if(demoUser&&demoUser.status==='ACTIVE'){
+      demoUser.status='SUSPENDED';
+      await query("UPDATE users SET status='SUSPENDED',updated_at=now() WHERE id=$1",[demoUser.id]);
+      log('warn','demo_account_suspended',{email});
+    }
+  }
 }
 
 function securityHeaders(res,{cacheControl='no-store'}={}) {
@@ -106,7 +135,24 @@ function sessionUser(session){return session.userId?users.get(session.userId):nu
 function authenticated(res,session){const user=sessionUser(session);if(!user){json(res,401,{error:{code:'AUTH_REQUIRED',message:'Please sign in.'}});return null}return user}
 function requireRole(res,user,role){if(user.role!==role){json(res,403,{error:{code:'FORBIDDEN',message:`${role.toLowerCase()} access required.`}});return false}return true}
 function sameToken(a='',b=''){const left=Buffer.from(String(a));const right=Buffer.from(String(b));return left.length===right.length&&timingSafeEqual(left,right)}
-function mutationAllowed(req,res,session){const origin=req.headers.origin;if(origin&&origin!==APP_ORIGIN){json(res,403,{error:{code:'ORIGIN_REJECTED',message:'Request origin is not allowed.'}});return false}if(!sameToken(req.headers['x-csrf-token'],session.csrf)){json(res,403,{error:{code:'CSRF_INVALID',message:'Security token is missing or invalid.'}});return false}if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:{code:'CONTENT_TYPE_INVALID',message:'Use application/json.'}});return false}return true}
+// Operational metrics are readable without a token only for a request that
+// reached this process directly, which on a tunnelled deployment means from
+// the host itself. Anything arriving through a proxy - and anything at all in
+// production - has to present METRICS_TOKEN.
+function metricsAllowed(req){
+  const token=String(process.env.METRICS_TOKEN||'');
+  if(token&&sameToken(req.headers.authorization,`Bearer ${token}`))return true;
+  if(IS_PRODUCTION)return false;
+  return !(req.headers['cf-connecting-ip']||req.headers['x-forwarded-for']);
+}
+function clientIp(req){
+  if(TRUST_PROXY){
+    const forwarded=String(req.headers['cf-connecting-ip']||req.headers['x-forwarded-for']||'').split(',')[0].trim();
+    if(forwarded)return forwarded;
+  }
+  return req.socket.remoteAddress;
+}
+function mutationAllowed(req,res,session){const origin=req.headers.origin;if(origin&&!ALLOWED_ORIGINS.has(origin)){json(res,403,{error:{code:'ORIGIN_REJECTED',message:'Request origin is not allowed.'}});return false}if(!sameToken(req.headers['x-csrf-token'],session.csrf)){json(res,403,{error:{code:'CSRF_INVALID',message:'Security token is missing or invalid.'}});return false}if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:{code:'CONTENT_TYPE_INVALID',message:'Use application/json.'}});return false}return true}
 async function readJson(req,res,maxBytes=32768){let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>maxBytes){json(res,413,{error:{code:'PAYLOAD_TOO_LARGE',message:'Request is too large.'}});return null}chunks.push(chunk)}try{return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}')}catch{json(res,400,{error:{code:'JSON_INVALID',message:'Malformed JSON.'}});return null}}
 function rateLimit(key,limit,windowMs){const now=Date.now();const active=(rateBuckets.get(key)||[]).filter(t=>now-t<windowMs);if(active.length>=limit)return false;active.push(now);rateBuckets.set(key,active);return true}
 async function audit(actorId,action,entityType,entityId=null,metadata={}){try{await query('INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,$4,$5,$6)',[id('audit'),actorId,action,entityType,entityId,JSON.stringify(metadata)])}catch(error){console.error('audit_write_failed',{action,entityType,message:error.message})}}
@@ -123,19 +169,19 @@ function activeRelationship(user,requestedTraineeId){return user.role==='TRAINER
 
 async function authApi(req,res,url,session){
   if(req.method==='POST'&&url.pathname==='/api/auth/register'){
-    if(!mutationAllowed(req,res,session))return true;if(!rateLimit(`register:${req.socket.remoteAddress}`,5,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many registration attempts.'}});return true}
+    if(!mutationAllowed(req,res,session))return true;if(!rateLimit(`register:${clientIp(req)}`,5,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many registration attempts.'}});return true}
     const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email),role=body.role;
     if(!validName(body.name)){json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2–80 characters.'}});return true}if(!validEmail(email)){json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});return true}if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}if(!['TRAINER','TRAINEE'].includes(role)){json(res,422,{error:{code:'ROLE_INVALID',message:'Choose trainer or trainee.'}});return true}if(body.privacyAccepted!==true||body.privacyNoticeVersion!==PRIVACY_NOTICE_VERSION){json(res,422,{error:{code:'PRIVACY_CONSENT_REQUIRED',message:'Review and accept the current Privacy Notice to create an account.'}});return true}if(usersByEmail.has(email)){json(res,409,{error:{code:'EMAIL_EXISTS',message:'An account already exists for this email.'}});return true}
     const user=await createUser({name:body.name,email,password:body.password,role,privacyNoticeVersion:PRIVACY_NOTICE_VERSION});const next=rotateSession(res,session,user.id);json(res,201,{user:publicUser(user),csrfToken:next.csrf,privacyNoticeVersion:PRIVACY_NOTICE_VERSION});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/login'){
-    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);const bucket=`login:${req.socket.remoteAddress}:${email}`;
+    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);const bucket=`login:${clientIp(req)}:${email}`;
     if(!rateLimit(bucket,8,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many sign-in attempts. Try again later.'}});return true}const userId=usersByEmail.get(email),user=userId&&users.get(userId);const correct=user&&await verifyPassword(String(body.password||''),user.passwordHash);
     if(!correct||user.status!=='ACTIVE'){await new Promise(resolve=>setTimeout(resolve,180));json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Email or password is incorrect.'}});return true}const next=rotateSession(res,session,user.id);json(res,200,{user:publicUser(user),csrfToken:next.csrf});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/forgot-password'){
     if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);
-    if(!rateLimit(`password-reset:${req.socket.remoteAddress}:${email}`,5,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many reset requests. Try again later.'}});return true}
+    if(!rateLimit(`password-reset:${clientIp(req)}:${email}`,5,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many reset requests. Try again later.'}});return true}
     const userId=usersByEmail.get(email);let demoResetToken=null;
     if(userId){const rawToken=randomBytes(32).toString('base64url');const tokenHash=Buffer.from(await scrypt(rawToken,'ptrainer-reset-v1',32)).toString('base64url');const reset={userId,expiresAt:Date.now()+15*60*1000,used:false};passwordResets.set(tokenHash,reset);await query('INSERT INTO password_reset_tokens(token_hash,user_id,expires_at) VALUES($1,$2,$3) ON CONFLICT(token_hash) DO NOTHING',[tokenHash,userId,new Date(reset.expiresAt).toISOString()]);demoResetToken=rawToken}
     json(res,202,{message:'If the account exists, reset instructions have been created.',...(!IS_PRODUCTION&&demoResetToken?{demoResetToken}:{})});return true;
@@ -245,7 +291,7 @@ async function api(req,res,url){
 }
 
 async function serveStatic(req,res,url){const requested=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));const safe=normalize(requested).replace(/^(\.\.(\/|\\|$))+/,'');const path=join(ROOT,safe);if(!path.startsWith(ROOT))return json(res,403,{error:{code:'FORBIDDEN',message:'Invalid path.'}});try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}})}}
-const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}const url=new URL(req.url,APP_ORIGIN);if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(IS_PRODUCTION&&req.headers.authorization!==`Bearer ${process.env.METRICS_TOKEN}`)return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
+const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}const url=new URL(req.url,APP_ORIGIN);if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
 server.listen(PORT,HOST,()=>log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode()}));
 let shuttingDown=false;async function shutdown(signal){if(shuttingDown)return;shuttingDown=true;log('info','server_shutdown_started',{signal});server.close(async()=>{await closeDatabase();log('info','server_shutdown_complete');process.exit(0)});setTimeout(()=>process.exit(1),10000).unref()}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));

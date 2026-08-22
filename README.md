@@ -17,6 +17,28 @@ Demo accounts:
 - Trainer: `trainer@ptrainer.local` / `DemoTrainer1!`
 - Trainee: `trainee@ptrainer.local` / `DemoTrainee1!`
 
+## Hosting it from one computer
+
+`docker compose up --build` starts Postgres, the app, and a Cloudflare Tunnel,
+then prints the public address people should use:
+
+```
+======================================================================
+ Ptrainer is ready. Share this address:
+
+   https://reported-address.trycloudflare.com
+======================================================================
+```
+
+No router port is opened — the tunnel dials out. Data lives in a named Docker
+volume and survives `docker compose down` and rebuilds; inspect it with
+`node scripts/db.mjs`.
+
+**Set `NODE_ENV=production` in `.env` before sharing the address.** Otherwise
+the seeded demo accounts stay enabled and their passwords are published in this
+repository. See [the hosting runbook](docs/hosting-on-one-computer.md) for a
+fixed hostname, database inspection, and how to verify the lockdown.
+
 ## Layout
 
 - [app/](app/) — application source, `Dockerfile`, migrations, and [full documentation](app/README.md)
