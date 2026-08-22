@@ -30,6 +30,8 @@ services:
       # Left empty on purpose: the entrypoint asks the tunnel for the address
       # Cloudflare assigned. Set APP_ORIGIN in .env to pin a fixed hostname.
       APP_ORIGIN: ${APP_ORIGIN:-}
+      # Set to 0 to skip the tunnel wait and come up local-only right away.
+      TUNNEL_WAIT_MS: ${TUNNEL_WAIT_MS:-}
       NODE_ENV: ${NODE_ENV:-development}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       PRIVACY_ORGANIZATION: ${PRIVACY_ORGANIZATION:-}
@@ -67,7 +69,11 @@ services:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 ${TUNNEL_RUN_ARGS:---url http://app:4173}
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+      # Only handed over in named-tunnel mode. cloudflared reads this variable
+      # whatever the command asks for, so a token left behind from an earlier
+      # setup would be applied to the quick tunnel it falls back to. Pairing it
+      # with TUNNEL_RUN_ARGS keeps the two modes from mixing credentials.
+      TUNNEL_TOKEN: ${TUNNEL_RUN_ARGS:+${TUNNEL_TOKEN:-}}
     restart: unless-stopped
 
   postgres:

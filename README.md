@@ -9,8 +9,13 @@ node scripts/up.mjs
 ```
 
 Starts the whole stack and opens `http://127.0.0.1:4173` in your browser once
-the app answers. Extra flags go straight through to compose, and `--no-open`
-skips the tab.
+the app answers. It opens that local address whether or not the Cloudflare
+tunnel came up, so a tunnel problem never costs you the app on this machine.
+
+- `--local` skips the tunnel entirely and starts local-only, which is also the
+  fastest way in — nothing waits on Cloudflare.
+- `--no-open` skips the tab.
+- Any other flag goes straight through to compose.
 
 `docker compose up --build` still works exactly as before — the wrapper exists
 only because a container has no way to reach the browser on your desktop, so

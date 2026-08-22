@@ -7,13 +7,16 @@
 // app is actually ready to serve one.
 //
 //   node scripts/up.mjs                 build if needed, then start and open
+//   node scripts/up.mjs --local         skip the tunnel; this machine only
 //   node scripts/up.mjs --no-open       start without opening a tab
 //   node scripts/up.mjs --profile edge  any extra flags go through to compose
 //
-// It opens the local address, not the Cloudflare one. Local is faster, needs no
-// tunnel, and avoids the Safe Browsing warning that quick-tunnel hostnames
-// collect — see docs/hosting-on-one-computer.md.
+// It opens the local address, not the Cloudflare one, and it does that whether
+// or not the tunnel came up. Local is faster, needs no tunnel, and avoids the
+// Safe Browsing warning that quick-tunnel hostnames collect — see
+// docs/hosting-on-one-computer.md.
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const PORT = process.env.PORT || '4173';
 const URL_LOCAL = `http://127.0.0.1:${PORT}`;
@@ -22,9 +25,40 @@ const GIVE_UP_MS = Number(process.env.PTRAINER_OPEN_TIMEOUT_MS || 300000);
 
 const argv = process.argv.slice(2);
 const noOpen = argv.includes('--no-open') || process.env.PTRAINER_NO_OPEN === '1';
-const passthrough = argv.filter(a => a !== '--no-open');
-// Default to --build so a first run and a run after code changes both work.
-const composeArgs = ['compose', 'up', ...(passthrough.length ? passthrough : ['--build'])];
+const localOnly = argv.includes('--local');
+const passthrough = argv.filter(a => a !== '--no-open' && a !== '--local');
+
+// --build stays on unless you asked for your own build behaviour, so a first
+// run and a run after code changes both work without thinking about it.
+const composeArgs = ['compose', 'up', ...passthrough];
+if (!passthrough.some(a => a === '--build' || a === '--no-build')) composeArgs.push('--build');
+
+// Local-only means the tunnel container never starts, so nothing waits on it
+// and a broken tunnel cannot hold up or rename the address you use here.
+const childEnv = { ...process.env };
+if (localOnly) {
+  composeArgs.push('--scale', 'tunnel=0');
+  childEnv.TUNNEL_WAIT_MS = '0';
+  console.log('Local only: the Cloudflare tunnel will not be started.\n');
+}
+
+// A token without TUNNEL_RUN_ARGS is a half-finished named-tunnel setup: compose
+// deliberately withholds the token in that state and runs a quick tunnel, so the
+// address is random rather than the fixed one that was being aimed for. Silent
+// either way, which is worth one line so it does not stay a mystery.
+function tunnelConfigNote() {
+  let env = '';
+  try {
+    env = readFileSync(new URL('../.env', import.meta.url), 'utf8');
+  } catch {
+    return null;
+  }
+  const value = name => (env.match(new RegExp(`^${name}=(.*)$`, 'm'))?.[1] || '').trim();
+  if (!value('TUNNEL_TOKEN') || value('TUNNEL_RUN_ARGS')) return null;
+  return 'Note: TUNNEL_TOKEN is set in .env but TUNNEL_RUN_ARGS is empty, so the\n'
+    + 'token is ignored and an account-free quick tunnel is used instead.\n'
+    + 'Set TUNNEL_RUN_ARGS=run to use your named tunnel.\n';
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -41,7 +75,12 @@ function openBrowser(url) {
   }
 }
 
-const compose = spawn('docker', composeArgs, { stdio: 'inherit' });
+if (!localOnly) {
+  const note = tunnelConfigNote();
+  if (note) console.log(note);
+}
+
+const compose = spawn('docker', composeArgs, { stdio: 'inherit', env: childEnv });
 
 compose.on('error', err => {
   console.error(

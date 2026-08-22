@@ -34,13 +34,56 @@ and prints it:
    https://reported-address.trycloudflare.com
 
  Origin source: Cloudflare quick tunnel
+ Local address: http://127.0.0.1:4173
 ======================================================================
 ```
 
-To read it again later: `docker compose logs app | grep -A2 "Share this"`.
+The local address is always printed and always works. The public one is only
+called shareable when the tunnel is actually carrying traffic — see
+[When the tunnel stops working](#when-the-tunnel-stops-working).
+
+To read it again later: `docker compose logs app | grep -A4 "address"`.
 
 Stop with `docker compose down`. The database volume survives that;
 `down -v` is what deletes it.
+
+### When the tunnel stops working
+
+A quick tunnel is disposable by design and has no uptime guarantee. Leave one
+running long enough and Cloudflare stops serving its hostname, at which point
+cloudflared keeps retrying the name it was already given rather than asking for
+a new one. The logs fill with:
+
+```
+ERR Serve tunnel error error="control stream encountered a failure while serving"
+INF Retrying connection in up to 1m4s
+```
+
+The address still appears in the startup banner and resolves for nobody.
+
+Recreating the connector fixes it, and a quick tunnel comes back under a new
+name — so whoever you gave the old address to needs the new one:
+
+```
+docker compose up -d --force-recreate tunnel
+docker compose up -d --force-recreate app
+```
+
+Check whether the tunnel is genuinely up rather than trusting the hostname:
+
+```
+docker compose exec app node -e "fetch('http://tunnel:2000/ready').then(r=>r.text()).then(console.log)"
+```
+
+`readyConnections` above zero is the only thing that means connected. This is
+the same check the app makes at startup before it calls an address shareable.
+
+None of this touches the local address. If you only need the app on this
+machine, skip the tunnel altogether:
+
+```
+node scripts/up.mjs --local
+```
 
 ### A fixed address
 
