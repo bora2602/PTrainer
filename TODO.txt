@@ -1,4 +1,6 @@
 Add calendar entegration
-
-
+Better backend protection
+Login experience optimization
 better sets / reps tracking
+personal trainer and trainee message platform enhancement 
+Web page look optimization
