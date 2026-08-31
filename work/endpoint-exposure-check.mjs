@@ -25,7 +25,7 @@ const PROTECTED = [
   ['GET', '/api/progress-entries'], ['POST', '/api/progress-entries'],
   ['GET', '/api/nutrition-entries'], ['POST', '/api/nutrition-entries'],
   ['GET', '/api/nutrition-target'], ['POST', '/api/nutrition-target'],
-  ['GET', '/api/food-products/3017624010701'],
+  ['GET', '/api/food-products/3017624010701'], ['GET', '/api/food-products?q=banana'],
   ['GET', '/api/messages'], ['POST', '/api/messages'],
   ['GET', '/api/notifications'],
   ['GET', '/api/subscription'], ['POST', '/api/billing/test-checkout'],
