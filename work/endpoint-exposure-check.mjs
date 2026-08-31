@@ -28,7 +28,13 @@ const PROTECTED = [
   ['GET', '/api/food-products/3017624010701'],
   ['GET', '/api/messages'], ['POST', '/api/messages'],
   ['GET', '/api/notifications'],
-  ['GET', '/api/subscription'], ['POST', '/api/billing/test-checkout']
+  ['GET', '/api/subscription'], ['POST', '/api/billing/test-checkout'],
+  ['GET', '/api/trainer-notes'], ['POST', '/api/trainer-notes'],
+  ['GET', '/api/progress-metrics'], ['GET', '/api/exercises/ex_probe'],
+  // Development-only hooks, listed here so the probe proves they still refuse
+  // an unauthenticated caller rather than being trusted to be harmless.
+  ['POST', '/api/test/expire-invitation'], ['POST', '/api/test/retention-sweep'],
+  ['GET', '/api/test/health-data-count']
 ];
 
 const anon = await fetch(`${base}/api/session`);

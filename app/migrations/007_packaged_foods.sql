@@ -7,13 +7,19 @@ ALTER TABLE nutrition_entries
   ADD COLUMN IF NOT EXISTS food_quantity_g NUMERIC(10,2),
   ADD COLUMN IF NOT EXISTS data_source VARCHAR(50);
 
-ALTER TABLE nutrition_entries
-  ADD CONSTRAINT nutrition_entries_food_barcode_format
-  CHECK (food_barcode IS NULL OR food_barcode ~ '^[0-9]{8,14}$');
+-- Guarded so a run that failed part-way through can simply be repeated. Bare
+-- ADD CONSTRAINT aborts on the second attempt and leaves no way forward.
+DO $$ BEGIN
+  ALTER TABLE nutrition_entries
+    ADD CONSTRAINT nutrition_entries_food_barcode_format
+    CHECK (food_barcode IS NULL OR food_barcode ~ '^[0-9]{8,14}$');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE nutrition_entries
-  ADD CONSTRAINT nutrition_entries_food_quantity_positive
-  CHECK (food_quantity_g IS NULL OR (food_quantity_g > 0 AND food_quantity_g <= 100000));
+DO $$ BEGIN
+  ALTER TABLE nutrition_entries
+    ADD CONSTRAINT nutrition_entries_food_quantity_positive
+    CHECK (food_quantity_g IS NULL OR (food_quantity_g > 0 AND food_quantity_g <= 100000));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS nutrition_entries_food_barcode
   ON nutrition_entries (food_barcode)

@@ -1,6 +1,6 @@
 # Ptrainer
 
-Responsive fitness coaching pilot with trainer/trainee roles, workout templates and assignment, a 198-movement exercise catalog, progress tracking, nutrition journaling, messaging, and versioned privacy consent.
+Responsive fitness coaching pilot with trainer/trainee roles, workout templates and scheduled assignment, set-level workout logging with resumable drafts, a 198-movement exercise library trainers can extend, coaching notes, email verification, progress tracking with unit conversion, nutrition journaling, messaging, and versioned privacy consent.
 
 ## Quick start
 

@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.mjs",
     "migrate": "node scripts/migrate.mjs",
-    "test": "node ../work/security-smoke.mjs"
+    "test": "node ../work/security-smoke.mjs && node ../work/workout-logging-check.mjs && node ../work/phase2-check.mjs && node ../work/phase3-check.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "0.3.14",

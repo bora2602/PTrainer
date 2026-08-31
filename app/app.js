@@ -28,14 +28,160 @@ applyTheme(storedTheme());
 
 function showToast(message,duration=3200){toast.textContent=message;toast.classList.add('show');clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.classList.remove('show'),duration)}
 function setBusy(button,busy,label='Working…'){if(!button)return;button.disabled=busy;if(busy){button.dataset.label=button.textContent;button.textContent=label}else button.textContent=button.dataset.label||button.textContent}
-function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='builder'&&state.user?.role==='TRAINER')loadTemplates();if(name==='workouts')loadAssignments();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
+function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='clients')loadNotes();if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
 async function api(path,options={}){const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'?{'X-CSRF-Token':state.csrfToken}:{}),...options.headers}});const data=await response.json().catch(()=>({error:{message:'Unexpected server response.'}}));if(!response.ok){const error=new Error(data.error?.message||'Request failed.');error.code=data.error?.code;throw error}return data}
 function initials(name){return name.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}
 function formatDate(value){if(!value)return 'Unscheduled';const date=new Date(value);return Number.isNaN(date.getTime())?'Unscheduled':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
 
 function showAuth(){state.user=null;$('#appShell').hidden=true;$('#authScreen').hidden=false;document.body.classList.remove('role-trainer','role-trainee')}
-async function showApp(user){state.user=user;$('#authScreen').hidden=true;$('#appShell').hidden=false;document.body.classList.toggle('role-trainer',user.role==='TRAINER');document.body.classList.toggle('role-trainee',user.role==='TRAINEE');$('#profileName').textContent=user.name;$('#profileRole').textContent=user.role==='TRAINER'?'Trainer':'Trainee';$('.profile-mini .avatar').textContent=initials(user.name);switchView('dashboard');await Promise.all([loadDashboard(),loadAssignments(),loadNotifications()])}
-async function initialize(){try{const session=await api('/api/session');state.csrfToken=session.csrfToken;$('.demo-divider').hidden=session.demoMode===false;$('.demo-actions').hidden=session.demoMode===false;if(session.authenticated)await showApp(session.user);else showAuth()}catch{showAuth();showToast('Unable to connect to Ptrainer') }}
+async function showApp(user){state.user=user;$('#authScreen').hidden=true;$('#appShell').hidden=false;document.body.classList.toggle('role-trainer',user.role==='TRAINER');document.body.classList.toggle('role-trainee',user.role==='TRAINEE');$('#profileName').textContent=user.name;$('#profileRole').textContent=user.role==='TRAINER'?'Trainer':'Trainee';$('.profile-mini .avatar').textContent=initials(user.name);switchView('dashboard');renderVerificationBanner();await Promise.all([loadDashboard(),loadAssignments(),loadNotifications(),loadOwnExercises()]);await loadNotes()}
+
+// Account mail now links back into the app, so the app has to answer those
+// links. Without this the verification, reset, and invitation emails all land
+// on a page that quietly ignores the token they carry.
+async function handleLinkTokens(){
+  const params=new URLSearchParams(location.search);
+  const verify=params.get('verify'),reset=params.get('reset'),invite=params.get('invite');
+  if(!verify&&!reset&&!invite)return;
+  // The token is spent or stored the moment it is read; leaving it in the address
+  // bar would put it into history and every future Referer.
+  history.replaceState(null,'',location.pathname);
+  if(verify){
+    try{const result=await api('/api/auth/verify-email',{method:'POST',body:JSON.stringify({token:verify})});if(state.user&&result.user?.id===state.user.id)state.user=result.user;showToast('Email address confirmed.')}
+    catch(error){showToast(error.message)}
+    renderVerificationBanner();
+  }
+  if(reset){showAuthPanel('forgot');$('#forgotPasswordForm input[name="token"]').value=reset;$('#resetError').textContent='Enter a new password to finish resetting.'}
+  if(invite){
+    const field=$('#acceptInviteForm input[name="code"]');
+    if(field)field.value=invite;
+    if(state.user?.role==='TRAINEE')$('#acceptInviteForm').requestSubmit();
+    else showToast('Sign in as the invited trainee to accept.');
+  }
+}
+function renderVerificationBanner(){
+  const banner=$('#verifyBanner');
+  banner.hidden=!state.user||state.user.emailVerified!==false;
+}
+$('#resendVerification').addEventListener('click',async event=>{
+  const button=event.currentTarget;setBusy(button,true,'Sending…');
+  try{await api('/api/me/resend-verification',{method:'POST',body:'{}'});showToast('Confirmation link sent.')}
+  catch(error){showToast(error.message)}
+  finally{setBusy(button,false)}
+});
+
+// --- coaching notes --------------------------------------------------------
+async function loadNotes(){
+  const trainer=state.user?.role==='TRAINER',client=selectedClient();
+  if(trainer&&!client){$('#noteList').innerHTML='<div class="template-item"><span>Connect a client to keep coaching notes.</span></div>';return}
+  try{
+    const result=await api(`/api/trainer-notes${trainer?`?traineeId=${encodeURIComponent(client.id)}`:''}`);
+    if(!trainer){
+      // The trainee sees only what was shared, newest first.
+      const latest=result.notes[0];
+      $('#coachMessage').hidden=!latest;
+      if(latest){$('#coachInitials').textContent=initials(latest.author?.name||'Coach');$('#coachMessageLabel').textContent=`NOTE FROM ${escapeText((latest.author?.name||'your trainer').toUpperCase())}`;$('#coachMessageBody').textContent=latest.body}
+      return;
+    }
+    $('#noteList').innerHTML=result.notes.map(note=>`<article class="note-row"><div><span class="note-visibility">${note.visibility==='SHARED'?'SHARED':'PRIVATE'}</span><p>${escapeText(note.body)}</p><small>${new Date(note.created_at).toLocaleString()}</small></div><div class="note-actions"><button class="secondary-button" data-note-share="${escapeText(note.id)}" data-visibility="${note.visibility}">${note.visibility==='SHARED'?'Make private':'Share'}</button><button class="secondary-button" data-note-delete="${escapeText(note.id)}">Delete</button></div></article>`).join('')||'<div class="template-item"><span>No coaching notes yet.</span></div>';
+    $$('[data-note-share]').forEach(button=>button.addEventListener('click',async()=>{
+      const note=result.notes.find(item=>item.id===button.dataset.noteShare);
+      try{await api(`/api/trainer-notes/${encodeURIComponent(button.dataset.noteShare)}`,{method:'PATCH',body:JSON.stringify({body:note.body,visibility:button.dataset.visibility==='SHARED'?'PRIVATE':'SHARED'})});await loadNotes()}
+      catch(error){showToast(error.message)}
+    }));
+    $$('[data-note-delete]').forEach(button=>button.addEventListener('click',async()=>{
+      try{await api(`/api/trainer-notes/${encodeURIComponent(button.dataset.noteDelete)}`,{method:'DELETE',body:'{}'});await loadNotes()}
+      catch(error){showToast(error.message)}
+    }));
+  }catch(error){if(state.user?.role==='TRAINER')$('#noteList').innerHTML=`<div class="template-item"><span>${escapeText(error.message)}</span></div>`}
+}
+$('#noteForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const client=selectedClient();
+  if(!client)return showToast('Connect a client before writing a note');
+  $('#noteError').textContent='';
+  try{
+    await api('/api/trainer-notes',{method:'POST',body:JSON.stringify({traineeId:client.id,body:$('#noteBody').value,visibility:$('#noteShared').checked?'SHARED':'PRIVATE'})});
+    event.target.reset();await loadNotes();showToast('Coaching note saved');
+  }catch(error){$('#noteError').textContent=error.message}
+});
+
+// --- trainer-owned movements ----------------------------------------------
+async function loadOwnExercises(){
+  if(state.user?.role!=='TRAINER')return;
+  try{
+    const result=await api('/api/exercises?limit=250');
+    state.exerciseCatalog=result.exercises;
+    const owned=result.exercises.filter(item=>item.canManage);
+    $('#ownExerciseList').innerHTML=owned.map(item=>`<article class="note-row"><div><p>${escapeText(item.name)}</p><small>${escapeText([item.muscleGroup,item.equipment].filter(Boolean).join(' · ')||'No details')} · v${item.version}</small></div><div class="note-actions"><button class="secondary-button" data-exercise-retire="${escapeText(item.id)}">Retire</button></div></article>`).join('')||'<div class="template-item"><span>No movements of your own yet.</span></div>';
+    $$('[data-exercise-retire]').forEach(button=>button.addEventListener('click',async()=>{
+      try{await api(`/api/exercises/${encodeURIComponent(button.dataset.exerciseRetire)}`,{method:'DELETE',body:'{}'});await loadOwnExercises();showToast('Movement retired')}
+      catch(error){showToast(error.message)}
+    }));
+  }catch(error){$('#ownExerciseList').innerHTML=`<div class="template-item"><span>${escapeText(error.message)}</span></div>`}
+}
+$('#exerciseForm').addEventListener('submit',async event=>{
+  event.preventDefault();$('#exerciseError').textContent='';
+  const form=new FormData(event.target);
+  try{
+    await api('/api/exercises',{method:'POST',body:JSON.stringify({name:form.get('name'),muscleGroup:form.get('muscleGroup'),equipment:form.get('equipment')})});
+    event.target.reset();await loadOwnExercises();showToast('Movement added to your library');
+  }catch(error){$('#exerciseError').textContent=error.message}
+});
+
+// --- progress corrections and display units --------------------------------
+const trimNumber=value=>String(Math.round(Number(value)*100)/100);
+function renderProgressEntries(entries,displayUnit){
+  $('#progressEntries').innerHTML=entries.slice().reverse().map(entry=>`<article class="note-row"><div><p>${escapeText(trimNumber(entry.display_value??entry.value))} ${escapeText(entry.display_unit||entry.unit)}${entry.unit!==(entry.display_unit||entry.unit)?` <small>(entered as ${escapeText(trimNumber(entry.value))} ${escapeText(entry.unit)})</small>`:''}</p><small>${new Date(entry.measured_at).toLocaleDateString()}${entry.note?` · ${escapeText(entry.note)}`:''}</small></div><div class="note-actions">${entry.can_manage?`<button class="secondary-button" data-progress-delete="${escapeText(entry.id)}">Delete</button>`:''}</div></article>`).join('')||'<div class="template-item"><span>No entries yet.</span></div>';
+  $$('[data-progress-delete]').forEach(button=>button.addEventListener('click',async()=>{
+    try{await api(`/api/progress-entries/${encodeURIComponent(button.dataset.progressDelete)}`,{method:'DELETE',body:JSON.stringify({traineeId:selectedClient()?.id})});await loadProgress();showToast('Entry removed')}
+    catch(error){showToast(error.message)}
+  }));
+}
+
+// --- what the trainer may see ---------------------------------------------
+// These flags describe access to the trainee's own health data, so the trainee
+// is the only one who can set them. Ticking a box is the whole interaction:
+// there is no separate save step to forget.
+async function loadSharingPreferences(){
+  const panel=$('#sharingPanel'),inputs=[$('#shareProgress'),$('#shareNutrition'),$('#shareLogging')];
+  if(state.user?.role!=='TRAINEE'){panel.hidden=true;return}
+  panel.hidden=false;
+  $('#sharingError').textContent='';
+  try{
+    const result=await api('/api/relationships');
+    const active=result.relationships.find(item=>item.status==='ACTIVE');
+    state.sharingRelationship=active||null;
+    if(!active){
+      $('#sharingTrainer').textContent='You have no active trainer, so none of this is shared with anyone.';
+      inputs.forEach(input=>{input.checked=false;input.disabled=true});
+      return;
+    }
+    const permissions={view_progress:true,view_nutrition:true,log_on_behalf:false,...(active.permissions||{})};
+    $('#sharingTrainer').textContent=`${active.trainer?.name||'Your trainer'} can see what is ticked below. Untick any of it whenever you want; the coaching relationship stays as it is.`;
+    $('#shareProgress').checked=permissions.view_progress;
+    $('#shareNutrition').checked=permissions.view_nutrition;
+    $('#shareLogging').checked=permissions.log_on_behalf;
+    inputs.forEach(input=>{input.disabled=false});
+  }catch(error){$('#sharingError').textContent=error.message}
+}
+async function saveSharingPreferences(){
+  const active=state.sharingRelationship;
+  if(!active)return;
+  $('#sharingError').textContent='';
+  try{
+    const result=await api(`/api/relationships/${encodeURIComponent(active.trainerId)}/${encodeURIComponent(active.traineeId)}`,{method:'PATCH',body:JSON.stringify({permissions:{view_progress:$('#shareProgress').checked,view_nutrition:$('#shareNutrition').checked,log_on_behalf:$('#shareLogging').checked}})});
+    state.sharingRelationship={...active,permissions:result.relationship.permissions};
+    showToast('Sharing updated');
+  }catch(error){
+    $('#sharingError').textContent=error.message;
+    // The checkbox must not keep showing a state the server rejected.
+    await loadSharingPreferences();
+  }
+}
+for(const selector of ['#shareProgress','#shareNutrition','#shareLogging'])$(selector).addEventListener('change',saveSharingPreferences);
+
+async function initialize(){try{const session=await api('/api/session');state.csrfToken=session.csrfToken;$('.demo-divider').hidden=session.demoMode===false;$('.demo-actions').hidden=session.demoMode===false;if(session.authenticated)await showApp(session.user);else showAuth();await handleLinkTokens()}catch{showAuth();showToast('Unable to connect to Ptrainer') }}
 let polling=false;async function pollLiveData(){if(polling||document.hidden||!state.user)return;polling=true;try{await loadNotifications();if($('.page.active-view')?.id==='messages-view')await loadMessages()}finally{polling=false}}
 setInterval(pollLiveData,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollLiveData()});
 
@@ -56,7 +202,7 @@ $('#themeToggle').addEventListener('click',()=>{const next=document.documentElem
 
 async function loadDashboard(){const data=await api('/api/dashboard'),trainerMode=data.kind==='TRAINER';$('#trainerDashboard').hidden=!trainerMode;$('#traineeDashboard').hidden=trainerMode;if(trainerMode){state.trainerClients=data.clients||[];if(!state.trainerClients.some(item=>item.id===state.selectedTraineeId))state.selectedTraineeId=state.trainerClients[0]?.id||null;$('#activeClients').textContent=data.activeClients;$('#workoutsCompleted').textContent=data.workoutsCompleted;$('#completionRate').textContent=`${data.completionRate}%`;$('#progressUpdates').textContent=data.progressUpdates;$('#navClientCount').textContent=data.activeClients;$('#trainerDashboard .stat-grid article:nth-child(1) small').textContent='Active coaching relationships';$('#trainerDashboard .stat-grid article:nth-child(2) small').textContent=`${data.workoutsCompleted} completed total`;$('#trainerDashboard .stat-grid article:nth-child(3) small').textContent=`${data.workoutsCompleted} of ${data.assignedCount} assigned`;$('#trainerDashboard .stat-grid article:nth-child(4) small').textContent='Logged in the last 7 days';$('#trainerDashboard .welcome-row h1').innerHTML=`Good morning, ${escapeText(state.user.name.split(' ')[0])}`;$('#trainerDashboard .welcome-row .eyebrow').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}).toUpperCase();const picker=$('#clientPicker');picker.innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<option value="${client.id}" ${client.id===state.selectedTraineeId?'selected':''}>${escapeText(client.name)}</option>`).join(''):'<option value="">No active clients</option>';picker.disabled=!state.trainerClients.length;$('#dashboardClientRows').innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<tr><td><div class="client-cell"><span class="client-avatar lavender">${initials(client.name)}</span><span><strong>${escapeText(client.name)}</strong><small>${escapeText(client.email)}</small></span></div></td><td>${escapeText(client.lastWorkout)}</td><td><div class="mini-progress"><span><i data-w="${client.completionRate}"></i></span><b>${client.completedCount}/${client.assignedCount}</b></div></td><td>${client.assignedCount?'Program active':'No activity'}</td><td><span class="status ${client.completionRate<50?'attention':'active'}">${client.completionRate<50?'Needs check-in':'On track'}</span></td><td><button class="more" data-select-client="${client.id}" aria-label="Select ${escapeText(client.name)}">•••</button></td></tr>`).join(''):'<tr><td colspan="6">No active clients yet. Send an invitation to begin.</td></tr>';$('#clientGrid').innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<article class="client-profile"><div class="client-avatar lavender">${initials(client.name)}</div><div><h3>${escapeText(client.name)}</h3><p>${escapeText(client.lastWorkout)}</p></div><span class="status ${client.completionRate<50?'attention':'active'}">${client.completionRate<50?'Check-in due':'On track'}</span><div class="client-stats"><span><b>${client.completionRate}%</b>completion</span><span><b>${client.assignedCount}</b>assigned workouts</span></div><button class="secondary-button" data-open-client="${client.id}">Open client</button></article>`).join(''):'<article class="panel empty-state"><h2>No clients connected</h2><p>Invite your first client to begin coaching in Ptrainer.</p><button class="primary-button" data-open-invite>Invite client</button></article>';$$('[data-select-client],[data-open-client]').forEach(button=>button.addEventListener('click',()=>{state.selectedTraineeId=button.dataset.selectClient||button.dataset.openClient;picker.value=state.selectedTraineeId;switchView(button.dataset.openClient?'progress':'dashboard');showToast('Active client updated')}));const schedule=$('.schedule-list');schedule.innerHTML=data.upcoming?.length?data.upcoming.map(item=>`<div class="schedule-item"><div class="time"><strong>${formatDate(item.dueDate)}</strong></div><div class="color-line purple"></div><div class="client-avatar lavender">${initials(item.trainee.name)}</div><div class="schedule-info"><strong>${escapeText(item.trainee.name)}</strong><span>${escapeText(item.name)}</span></div><span class="status upcoming">${escapeText(item.status.toLowerCase())}</span></div>`).join(''):'<div class="template-item"><span>No upcoming workouts.</span></div>';$('.schedule-panel .panel-header p').textContent=`${data.upcoming?.length||0} upcoming workouts`;const next=data.upcoming?.[0],focus=$('.focus-card');focus.querySelector('h2').textContent=next?`${next.name} is next for ${next.trainee.name}`:'Your coaching queue is clear';focus.querySelector('p').textContent=next?`Due ${formatDate(next.dueDate)} · ${next.status.toLowerCase()}. Open the plan or add context while it is relevant.`:'Invite a client or assign a workout to create the next coaching action.';focus.querySelector('.session-readout span').textContent=`${data.completionRate}%`;focus.querySelector('.focus-metric small').textContent=`${data.workoutsCompleted} of ${data.assignedCount} completed`;const attention=$('.attention-list');attention.innerHTML=data.attentionItems?.length?data.attentionItems.map(item=>`<button class="attention-item"><span class="attention-icon warning">!</span><span><strong>Overdue workout</strong><small>${escapeText(item.trainee.name)} · ${escapeText(item.name)} · ${formatDate(item.dueDate)}</small></span><span>›</span></button>`).join(''):'<div class="template-item"><span>No overdue workouts.</span></div>';$('.attention-panel .panel-header p').textContent=`${data.attentionCount} items to review`}else{$('#traineeStreak').textContent=data.currentStreak;$('#traineeCompletion').textContent=`${data.weeklyCompletion}%`;$('.coach-chip').textContent=data.trainerName?`Coach: ${data.trainerName}`:'No trainer connected';if(data.todayWorkout){$('#traineeWorkoutName').textContent=data.todayWorkout.name;$('#traineeWorkoutMeta').textContent=`${data.todayWorkout.exerciseCount} exercises · Status: ${data.todayWorkout.status.toLowerCase()}`;state.activeAssignmentId=data.todayWorkout.id}else{$('#traineeWorkoutName').textContent='No workout assigned';$('#traineeWorkoutMeta').textContent='Your trainer’s next assignment will appear here.'}}}
 
-$('#clientPicker').addEventListener('change',event=>{state.selectedTraineeId=event.target.value||null;const current=$('.page.active-view')?.id?.replace('-view','');if(['progress','nutrition','messages','builder','workouts'].includes(current))switchView(current);showToast('Active client updated')});
+$('#clientPicker').addEventListener('change',event=>{state.selectedTraineeId=event.target.value||null;const current=$('.page.active-view')?.id?.replace('-view','');if(['progress','nutrition','messages','builder','workouts'].includes(current))switchView(current);loadNotes();showToast('Active client updated')});
 
 const dialog=$('#inviteDialog'),inviteForm=$('#inviteForm'),inviteError=$('#inviteError');const openInvite=()=>{inviteError.textContent='';inviteForm.reset();dialog.showModal()};$('#inviteButton').addEventListener('click',openInvite);$$('[data-open-invite]').forEach(button=>button.addEventListener('click',openInvite));[...dialog.querySelectorAll('[data-close-dialog], .modal-close')].forEach(button=>button.addEventListener('click',()=>dialog.close()));
 $('#clientGrid').addEventListener('click',event=>{if(event.target.closest('[data-open-invite]'))openInvite()});
@@ -65,7 +211,10 @@ $('#acceptInviteForm').addEventListener('submit',async event=>{event.preventDefa
 
 function selectedClient(){return state.trainerClients.find(item=>item.id===state.selectedTraineeId)||state.trainerClients[0]}
 function traineeQuery(){const client=selectedClient();return state.user?.role==='TRAINER'&&client?`?traineeId=${encodeURIComponent(client.id)}`:''}
-async function loadProgress(){try{const result=await api(`/api/progress-entries${traineeQuery()}`);const entries=result.entries||[],values=entries.map(item=>Number(item.value));if(!values.length){$('#progressChart').innerHTML='<div class="template-item"><span>No progress entries yet.</span></div>';$('#progressLatest').textContent='—';return}const min=Math.min(...values),max=Math.max(...values),range=Math.max(1,max-min);$('#progressLatest').textContent=`${values.at(-1).toFixed(1)} ${entries.at(-1).unit}`;$('#progressChart').innerHTML=entries.map(item=>{const height=20+((Number(item.value)-min)/range)*75;return `<div class="chart-point" title="${Number(item.value).toFixed(1)} ${escapeText(item.unit)}"><i data-h="${height}"></i><small>${new Date(item.measured_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</small></div>`}).join('')}catch(error){$('#progressError').textContent=error.message}}
+async function loadProgress(){try{const result=await api(`/api/progress-entries${traineeQuery()}`);const entries=result.entries||[],displayUnit=result.displayUnit;
+// Every point is plotted in one unit. Mixing a kilogram and a pound on one axis
+// as bare numbers drew a trend that was simply wrong.
+const chartValue=item=>Number(item.display_value??item.value),values=entries.map(chartValue);renderProgressEntries(entries,displayUnit);if(!values.length){$('#progressChart').innerHTML='<div class="template-item"><span>No progress entries yet.</span></div>';$('#progressLatest').textContent='—';return}const min=Math.min(...values),max=Math.max(...values),range=Math.max(1,max-min),unitLabel=displayUnit||entries.at(-1).unit;$('#progressLatest').textContent=`${values.at(-1).toFixed(1)} ${unitLabel}`;$('#progressChart').innerHTML=entries.map(item=>{const height=20+((chartValue(item)-min)/range)*75;return `<div class="chart-point" title="${chartValue(item).toFixed(1)} ${escapeText(unitLabel)}"><i data-h="${height}"></i><small>${new Date(item.measured_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</small></div>`}).join('')}catch(error){$('#progressError').textContent=error.message}}
 $('#progressForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,fields=new FormData(form),button=form.querySelector('button');$('#progressError').textContent='';setBusy(button,true,'Saving…');try{await api('/api/progress-entries',{method:'POST',body:JSON.stringify({traineeId:state.user.role==='TRAINER'?selectedClient()?.id:undefined,metricType:fields.get('metricType'),value:fields.get('value'),unit:fields.get('unit'),measuredAt:new Date().toISOString()})});form.reset();showToast('Progress entry saved');await loadProgress()}catch(error){$('#progressError').textContent=error.message}finally{setBusy(button,false)}});
 
 const localDate=()=>{const now=new Date(),offset=now.getTimezoneOffset()*60000;return new Date(now-offset).toISOString().slice(0,10)};
@@ -104,7 +253,7 @@ async function loadNotifications(){if(!state.user)return;try{const result=await 
 async function loadSubscription(){try{const result=await api('/api/subscription');$('#currentPlan').textContent=`${result.subscription.plan_code} · ${result.subscription.status}`}catch(error){showToast(error.message)}}
 $$('[data-plan]').forEach(button=>button.addEventListener('click',async()=>{setBusy(button,true,'Activating…');try{const result=await api('/api/billing/test-checkout',{method:'POST',body:JSON.stringify({planCode:button.dataset.plan})});$('#currentPlan').textContent=`${result.subscription.plan_code} · ${result.subscription.status}`;showToast(`${button.dataset.plan} activated in test mode — no charge`)}catch(error){showToast(error.message)}finally{setBusy(button,false)}}));
 
-async function loadSettings(){try{const [{user,profile},activity,privacy,accountPrivacy]=await Promise.all([api('/api/me'),api('/api/me/audit-events'),api('/api/privacy'),api('/api/me/privacy')]),form=$('#profileForm');form.elements.name.value=user.name;form.elements.bio.value=profile.bio||'';form.elements.goals.value=profile.goals||'';form.elements.specialties.value=profile.specialties||'';form.elements.preferredUnits.value=profile.preferred_units||'METRIC';form.elements.timezone.value=profile.timezone||'America/Toronto';$('#storageRegion').textContent=`${privacy.storageRegion}${privacy.pilot?' · controlled pilot':''}`;$('#privacyNoticeStatus').textContent=accountPrivacy.consent?accountPrivacy.consent.notice_version===privacy.noticeVersion?`Accepted ${accountPrivacy.consent.notice_version} · ${new Date(accountPrivacy.consent.accepted_at).toLocaleDateString()}`:`Accepted ${accountPrivacy.consent.notice_version} · current notice ${privacy.noticeVersion}`:`Current version ${privacy.noticeVersion} · no recorded acceptance for this pre-existing/demo account`;$('#auditList').innerHTML=activity.events.length?activity.events.slice(0,8).map(item=>`<div class="audit-item"><strong>${escapeText(item.action.replaceAll('_',' ').toLowerCase())}</strong><span>${new Date(item.created_at).toLocaleString()}</span></div>`).join(''):'<div class="template-item"><span>No security activity yet.</span></div>'}catch(error){$('#profileError').textContent=error.message}}
+async function loadSettings(){loadSharingPreferences();try{const [{user,profile},activity,privacy,accountPrivacy]=await Promise.all([api('/api/me'),api('/api/me/audit-events'),api('/api/privacy'),api('/api/me/privacy')]),form=$('#profileForm');form.elements.name.value=user.name;form.elements.bio.value=profile.bio||'';form.elements.goals.value=profile.goals||'';form.elements.specialties.value=profile.specialties||'';form.elements.preferredUnits.value=profile.preferred_units||'METRIC';form.elements.timezone.value=profile.timezone||'America/Toronto';$('#storageRegion').textContent=`${privacy.storageRegion}${privacy.pilot?' · controlled pilot':''}`;$('#privacyNoticeStatus').textContent=accountPrivacy.consent?accountPrivacy.consent.notice_version===privacy.noticeVersion?`Accepted ${accountPrivacy.consent.notice_version} · ${new Date(accountPrivacy.consent.accepted_at).toLocaleDateString()}`:`Accepted ${accountPrivacy.consent.notice_version} · current notice ${privacy.noticeVersion}`:`Current version ${privacy.noticeVersion} · no recorded acceptance for this pre-existing/demo account`;$('#auditList').innerHTML=activity.events.length?activity.events.slice(0,8).map(item=>`<div class="audit-item"><strong>${escapeText(item.action.replaceAll('_',' ').toLowerCase())}</strong><span>${new Date(item.created_at).toLocaleString()}</span></div>`).join(''):'<div class="template-item"><span>No security activity yet.</span></div>'}catch(error){$('#profileError').textContent=error.message}}
 $('#profileForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,fields=new FormData(form),button=form.querySelector('[type="submit"]');$('#profileError').textContent='';setBusy(button,true,'Saving…');try{const result=await api('/api/me/profile',{method:'PATCH',body:JSON.stringify({name:fields.get('name'),bio:fields.get('bio'),goals:fields.get('goals'),specialties:fields.get('specialties'),preferredUnits:fields.get('preferredUnits'),timezone:fields.get('timezone')})});state.user=result.user;$('#profileName').textContent=result.user.name;$('.profile-mini .avatar').textContent=initials(result.user.name);showToast('Profile saved');await loadSettings()}catch(error){$('#profileError').textContent=error.message}finally{setBusy(button,false)}});
 $('#exportDataButton').addEventListener('click',async event=>{const button=event.currentTarget;setBusy(button,true,'Preparing…');try{const data=await api('/api/me/export'),blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`ptrainer-data-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);showToast('Your data export is ready');await loadSettings()}catch(error){showToast(error.message)}finally{setBusy(button,false)}});
 const deleteDialog=$('#deleteAccountDialog');$('#openDeleteAccount').addEventListener('click',()=>{deleteDialog.showModal();$('#deleteAccountForm').reset();$('#deleteAccountError').textContent=''});$$('[data-close-delete]').forEach(button=>button.addEventListener('click',()=>deleteDialog.close()));$('#deleteAccountForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,fields=new FormData(form),button=form.querySelector('[type="submit"]');$('#deleteAccountError').textContent='';setBusy(button,true,'Deleting…');try{await api('/api/me/account',{method:'DELETE',body:JSON.stringify({password:fields.get('password'),confirmation:fields.get('confirmation')})});deleteDialog.close();state.csrfToken='';const session=await api('/api/session');state.csrfToken=session.csrfToken;showAuth();showToast('Your account has been deleted and anonymized')}catch(error){$('#deleteAccountError').textContent=error.message}finally{setBusy(button,false)}});
@@ -115,10 +264,60 @@ $$('[data-open-privacy]').forEach(button=>button.addEventListener('click',()=>op
 
 function defaultExercises(){return[{name:'Barbell bench press',meta:'4 sets · 8 reps · 90 sec rest',tag:'Chest',done:false,sets:[[8,60],[8,60],[8,62.5],[8,62.5]]},{name:'Single-arm dumbbell row',meta:'3 sets · 10 reps · 75 sec rest',tag:'Back',done:false,sets:[[10,24],[10,24],[10,24]]},{name:'Seated shoulder press',meta:'3 sets · 10 reps · 75 sec rest',tag:'Shoulders',done:false,sets:[[10,18],[10,18],[10,18]]},{name:'Cable triceps extension',meta:'3 sets · 12 reps · 60 sec rest',tag:'Arms',done:false,sets:[[12,20],[12,20],[12,20]]}]}
 function escapeText(value){const node=document.createElement('span');node.textContent=String(value);return node.innerHTML}
-function renderExercises(){const list=$('#exerciseList');list.innerHTML=state.exercises.map((exercise,index)=>`<article class="exercise-card ${exercise.done?'completed':''}"><div class="exercise-top"><button class="exercise-check" data-exercise="${index}" aria-pressed="${exercise.done}" aria-label="Mark ${escapeText(exercise.name)} complete">${exercise.done?'✓':''}</button><div class="exercise-name"><strong>${escapeText(exercise.name)}</strong><span>${escapeText(exercise.meta)}</span></div><span class="exercise-tag">${escapeText(exercise.tag)}</span></div><table class="set-table"><thead><tr><th>SET</th><th>PREVIOUS</th><th>REPS</th><th>WEIGHT (KG)</th></tr></thead><tbody>${exercise.sets.map((set,setIndex)=>`<tr><td><span class="set-number">${setIndex+1}</span></td><td>${set[0]} × ${set[1]} kg</td><td><input aria-label="Set ${setIndex+1} reps" min="0" max="1000" type="number" value="${set[0]}"></td><td><input aria-label="Set ${setIndex+1} weight" min="0" max="2000" type="number" step="0.5" value="${set[1]}"></td></tr>`).join('')}</tbody></table></article>`).join('');$$('.exercise-check').forEach(button=>button.addEventListener('click',()=>{state.exercises[button.dataset.exercise].done=!state.exercises[button.dataset.exercise].done;renderExercises();updateWorkoutProgress()}))}
-function updateWorkoutProgress(){const completed=state.exercises.filter(exercise=>exercise.done).length,percent=state.exercises.length?Math.round(completed/state.exercises.length*100):0;$('#exerciseProgress').textContent=`${completed} of ${state.exercises.length} exercises`;$('#progressPercent').textContent=`${percent}%`;$('#workoutProgressBar').style.width=`${percent}%`}
-async function loadAssignments(){try{const result=await api('/api/assigned-workouts'),client=selectedClient(),visible=result.assignments.filter(item=>state.user?.role!=='TRAINER'||!client||item.traineeId===client.id),assignment=visible.find(item=>item.id===state.activeAssignmentId)||visible.find(item=>item.status==='ASSIGNED'||item.status==='IN_PROGRESS')||visible[0];state.currentAssignment=assignment||null;if(assignment){state.activeAssignmentId=assignment.id;$('.workout-header h1').textContent=assignment.templateSnapshot.name;state.exercises=assignment.templateSnapshot.exercises.map(item=>({name:item.name,meta:`${item.sets} sets · ${item.reps} reps · ${item.restSeconds} sec rest`,tag:'Exercise',done:false,sets:Array.from({length:item.sets},()=>[item.reps,0])}))}else{$('.workout-header h1').textContent='No workout assigned';state.exercises=[]}$('#editWorkoutButton').disabled=!assignment||assignment.status!=='ASSIGNED';$('#finishWorkout').disabled=!assignment}catch{state.currentAssignment=null;state.exercises=[]}renderExercises();updateWorkoutProgress()}
-$('#finishWorkout').addEventListener('click',async event=>{const button=event.currentTarget;setBusy(button,true,'Saving…');try{const key=`workout_${Date.now()}_${crypto.randomUUID().replaceAll('-','')}`;const data=await api(`/api/assigned-workouts/${state.activeAssignmentId}/logs`,{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({exercises:state.exercises.map(exercise=>({completed:exercise.done}))})});showToast(`Workout saved securely · ${data.log.completedCount}/${state.exercises.length} complete`)}catch(error){showToast(error.message)}finally{setBusy(button,false)}});
+const LOG_UNIT='kg';
+// Prescribed reps are prefilled only for the person doing the workout, as a
+// starting value they will correct. A trainer reviewing the result must see
+// what was actually recorded, so an untouched set reads as blank, not as a
+// number nobody logged.
+const blankSet=(prescribed,prefill)=>({reps:prefill&&prescribed?prescribed.reps:null,loadValue:null,loadUnit:null,exertion:null,completed:false,painFlag:false,note:''});
+const cellValue=value=>value===null||value===undefined?'':value;
+function setsPayload(){const rows=[];state.exercises.forEach((exercise,exerciseIndex)=>exercise.sets.forEach((set,setIndex)=>{const load=set.loadValue===''||set.loadValue==null?null:Number(set.loadValue);rows.push({exerciseIndex,setIndex,completed:Boolean(set.completed),reps:set.reps===''||set.reps==null?null:Number(set.reps),loadValue:load,loadUnit:load===null?null:LOG_UNIT,exertion:set.exertion===''||set.exertion==null?null:Number(set.exertion),painFlag:Boolean(set.painFlag),note:String(set.note||'')})}));return rows}
+// The logger is used mid-workout on a phone, so every change is written back as
+// a draft rather than waiting for a Finish tap that may never come.
+let draftTimer=null;
+function scheduleDraftSave(){if(!state.activeAssignmentId||state.user?.role!=='TRAINEE')return;clearTimeout(draftTimer);$('#workoutSaveState').textContent='Saving…';draftTimer=setTimeout(async()=>{try{await api(`/api/assigned-workouts/${state.activeAssignmentId}/logs`,{method:'PATCH',body:JSON.stringify({sets:setsPayload()})});$('#workoutSaveState').textContent=`Draft saved ${new Date().toLocaleTimeString()}`}catch(error){$('#workoutSaveState').textContent=`Not saved — ${error.message}`}},800)}
+function setRowMarkup(exerciseIndex,set,setIndex,readOnly){
+  const reps=cellValue(set.reps),load=cellValue(set.loadValue),exertion=cellValue(set.exertion),note=cellValue(set.note);
+  if(readOnly)return `<tr><td><span class="set-number">${setIndex+1}</span></td><td>${set.completed?'✓':'—'}</td><td>${reps===''?'—':escapeText(reps)}</td><td>${load===''?'—':`${escapeText(load)} ${escapeText(set.loadUnit||LOG_UNIT)}`}</td><td>${exertion===''?'—':escapeText(exertion)}</td><td>${set.painFlag?'⚠ ':''}${escapeText(note)}</td></tr>`;
+  return `<tr data-exercise="${exerciseIndex}" data-set="${setIndex}"><td><span class="set-number">${setIndex+1}</span></td><td><input type="checkbox" class="set-done" aria-label="Set ${setIndex+1} complete"${set.completed?' checked':''}></td><td><input class="set-field" data-field="reps" type="number" inputmode="numeric" min="0" max="1000" aria-label="Set ${setIndex+1} reps" value="${escapeText(reps)}"></td><td><input class="set-field" data-field="loadValue" type="number" inputmode="decimal" min="0" max="100000" step="0.5" aria-label="Set ${setIndex+1} load in kilograms" value="${escapeText(load)}"></td><td><input class="set-field" data-field="exertion" type="number" inputmode="decimal" min="1" max="10" step="0.5" aria-label="Set ${setIndex+1} perceived exertion" value="${escapeText(exertion)}"></td><td><input class="set-field" data-field="note" type="text" maxlength="500" aria-label="Set ${setIndex+1} note" value="${escapeText(note)}"></td></tr>`;
+}
+function syncExerciseCard(index){const card=$$('#exerciseList .exercise-card')[index],exercise=state.exercises[index];if(!card)return;card.classList.toggle('completed',exercise.done);const button=card.querySelector('.exercise-check');button.setAttribute('aria-pressed',String(exercise.done));button.textContent=exercise.done?'✓':''}
+function renderExercises(){
+  // A trainer opens this screen to review what was lifted, not to type into it.
+  const readOnly=state.user?.role==='TRAINER',list=$('#exerciseList');
+  list.innerHTML=state.exercises.map((exercise,index)=>`<article class="exercise-card ${exercise.done?'completed':''}"><div class="exercise-top"><button class="exercise-check" data-exercise="${index}" aria-pressed="${exercise.done}" aria-label="Mark ${escapeText(exercise.name)} complete"${readOnly?' disabled':''}>${exercise.done?'✓':''}</button><div class="exercise-name"><strong>${escapeText(exercise.name)}</strong><span>${escapeText(exercise.meta)}</span></div><span class="exercise-tag">${escapeText(exercise.tag)}</span></div><table class="set-table"><caption class="sr-only">${escapeText(exercise.name)} sets</caption><thead><tr><th scope="col">SET</th><th scope="col">DONE</th><th scope="col">REPS</th><th scope="col">LOAD (KG)</th><th scope="col">RPE</th><th scope="col">NOTE</th></tr></thead><tbody>${exercise.sets.map((set,setIndex)=>setRowMarkup(index,set,setIndex,readOnly)).join('')}</tbody></table></article>`).join('')||'<div class="template-item"><span>No workout assigned yet.</span></div>';
+  if(readOnly)return;
+  $$('#exerciseList .exercise-check').forEach(button=>button.addEventListener('click',()=>{const exercise=state.exercises[button.dataset.exercise],next=!exercise.done;exercise.sets.forEach(set=>{set.completed=next});updateWorkoutProgress();renderExercises();scheduleDraftSave()}));
+  // Per-set edits update in place: a full re-render mid-workout would steal
+  // focus from the field the thumb is already in.
+  $$('#exerciseList .set-done').forEach(box=>box.addEventListener('change',event=>{const row=event.target.closest('tr');state.exercises[row.dataset.exercise].sets[row.dataset.set].completed=event.target.checked;updateWorkoutProgress();syncExerciseCard(Number(row.dataset.exercise));scheduleDraftSave()}));
+  $$('#exerciseList .set-field').forEach(input=>input.addEventListener('change',event=>{const row=event.target.closest('tr'),field=event.target.dataset.field,set=state.exercises[row.dataset.exercise].sets[row.dataset.set];set[field]=event.target.value===''?(field==='note'?'':null):(field==='note'?event.target.value:Number(event.target.value));scheduleDraftSave()}));
+}
+// Reviewing results means choosing which session to look at. Without this the
+// screen only ever shows whichever workout happened to load first.
+function renderAssignmentPicker(visible,current){const picker=$('#assignmentPicker');picker.innerHTML=visible.map(item=>`<option value="${escapeText(item.id)}"${item.id===current?.id?' selected':''}>${escapeText(item.templateSnapshot.name)}${item.dueDate?` · ${escapeText(item.dueDate)}`:''} · ${escapeText(item.status.replaceAll('_',' ').toLowerCase())}</option>`).join('');picker.hidden=visible.length<2}
+function updateWorkoutProgress(){state.exercises.forEach(exercise=>{exercise.done=exercise.sets.length>0&&exercise.sets.every(set=>set.completed)});const completed=state.exercises.filter(exercise=>exercise.done).length,percent=state.exercises.length?Math.round(completed/state.exercises.length*100):0;$('#exerciseProgress').textContent=`${completed} of ${state.exercises.length} exercises`;$('#progressPercent').textContent=`${percent}%`;$('#workoutProgressBar').style.width=`${percent}%`}
+// Reopening a workout must show the work already done, not a blank form. A
+// trainee gets their own draft back; a trainer gets the submitted result.
+async function hydrateFromLogs(assignmentId){
+  try{
+    const result=await api(`/api/assigned-workouts/${assignmentId}/logs`);
+    const log=result.logs.find(item=>item.status==='DRAFT')||result.logs.find(item=>item.status==='FINAL');
+    $('#workoutSaveState').textContent=log?(log.status==='DRAFT'?'Draft restored':'Submitted'):'Not started';
+    if(!log)return;
+    for(const row of log.sets){
+      const exercise=state.exercises[row.exercise_index];if(!exercise)continue;
+      while(exercise.sets.length<=row.set_index)exercise.sets.push(blankSet(null,false));
+      exercise.sets[row.set_index]={reps:row.reps,loadValue:row.load_value,loadUnit:row.load_unit,exertion:row.exertion,completed:row.completed,painFlag:row.pain_flag,note:row.note||''};
+    }
+  }catch{
+    // History is not the core flow; a logger that cannot reach it still opens.
+    $('#workoutSaveState').textContent='History unavailable';
+  }
+}
+async function loadAssignments(){try{const result=await api('/api/assigned-workouts'),client=selectedClient(),visible=result.assignments.filter(item=>state.user?.role!=='TRAINER'||!client||item.traineeId===client.id),assignment=visible.find(item=>item.id===state.activeAssignmentId)||visible.find(item=>item.status==='ASSIGNED'||item.status==='IN_PROGRESS')||visible[0];state.currentAssignment=assignment||null;renderAssignmentPicker(visible,assignment);if(assignment){state.activeAssignmentId=assignment.id;$('.workout-header h1').textContent=assignment.templateSnapshot.name;state.exercises=assignment.templateSnapshot.exercises.map(item=>({name:item.name,meta:`${item.sets} sets · ${item.reps} reps · ${item.restSeconds} sec rest`,tag:'Exercise',done:false,sets:Array.from({length:item.sets},()=>blankSet(item,state.user?.role==='TRAINEE'))}));await hydrateFromLogs(assignment.id)}else{$('.workout-header h1').textContent='No workout assigned';state.exercises=[];$('#workoutSaveState').textContent=''}$('#editWorkoutButton').disabled=!assignment||assignment.status!=='ASSIGNED';$('#finishWorkout').disabled=!assignment||state.user?.role==='TRAINER'}catch{state.currentAssignment=null;state.exercises=[]}updateWorkoutProgress();renderExercises()}
+$('#assignmentPicker').addEventListener('change',event=>{state.activeAssignmentId=event.target.value;loadAssignments()});
+$('#finishWorkout').addEventListener('click',async event=>{const button=event.currentTarget;setBusy(button,true,'Saving…');try{clearTimeout(draftTimer);const key=`workout_${Date.now()}_${crypto.randomUUID().replaceAll('-','')}`;const data=await api(`/api/assigned-workouts/${state.activeAssignmentId}/logs`,{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({sets:setsPayload()})});$('#workoutSaveState').textContent='Submitted';showToast(`Workout saved securely · ${data.log.completedCount}/${state.exercises.length} complete`);await loadAssignments()}catch(error){showToast(error.message)}finally{setBusy(button,false)}});
 
 const workoutEditorDialog=$('#workoutEditorDialog'),workoutEditorForm=$('#workoutEditorForm');
 async function getExerciseCatalog(){if(state.exerciseCatalog)return state.exerciseCatalog;const data=await api('/api/exercises?limit=250');state.exerciseCatalog=data.exercises||[];return state.exerciseCatalog}
@@ -133,7 +332,7 @@ $('#workoutTemplateQuery').addEventListener('input',event=>renderWorkoutTemplate
 
 let builderRows=0;function addBuilderExercise(values={}){builderRows+=1;const row=document.createElement('div');row.className='builder-exercise';row.innerHTML=exerciseEditorMarkup(values);row.querySelector('.remove-exercise').addEventListener('click',()=>row.remove());wireExerciseCatalog(row);$('#builderExercises').append(row)}
 $('#addExerciseButton').addEventListener('click',()=>addBuilderExercise());$('#newTemplateButton').addEventListener('click',()=>{$('#templateForm').reset();$('#builderExercises').innerHTML='';addBuilderExercise();addBuilderExercise();$('.builder-editor input').focus()});
-async function loadTemplates(){try{const result=await api('/api/workout-templates'),client=selectedClient();$('#templateList').innerHTML=result.templates.map(template=>`<article class="template-item"><div><strong>${escapeText(template.name)}</strong><span>${template.exercises.length} exercises · Version ${template.version}</span></div>${client?`<button class="secondary-button" data-assign="${template.id}">Assign to ${escapeText(client.name)}</button>`:''}</article>`).join('')||'<div class="template-item"><span>No templates yet.</span></div>';$$('[data-assign]').forEach(button=>button.addEventListener('click',()=>assignTemplate(button.dataset.assign,button)))}catch(error){$('#templateList').innerHTML=`<div class="template-item"><span>${escapeText(error.message)}</span></div>`}}
-async function assignTemplate(templateId,button){const client=selectedClient();if(!client)return showToast('Connect a trainee before assigning');setBusy(button,true,'Assigning…');try{await api('/api/assigned-workouts',{method:'POST',body:JSON.stringify({templateId,traineeId:client.id,dueDate:new Date().toISOString().slice(0,10)})});showToast(`Workout assigned to ${client.name}`);await loadDashboard()}catch(error){showToast(error.message)}finally{setBusy(button,false)}}
+async function loadTemplates(){try{const result=await api('/api/workout-templates'),client=selectedClient();$('#templateList').innerHTML=result.templates.map(template=>`<article class="template-item"><div><strong>${escapeText(template.name)}</strong><span>${template.exercises.length} exercises · Version ${template.version}</span></div><div class="note-actions">${client?`<button class="secondary-button" data-assign="${template.id}">Assign to ${escapeText(client.name)}</button>`:''}<button class="secondary-button" data-duplicate="${template.id}">Duplicate</button><button class="secondary-button" data-template-delete="${template.id}">Delete</button></div></article>`).join('')||'<div class="template-item"><span>No templates yet.</span></div>';$$('[data-assign]').forEach(button=>button.addEventListener('click',()=>assignTemplate(button.dataset.assign,button)));$$('[data-duplicate]').forEach(button=>button.addEventListener('click',async()=>{try{await api(`/api/workout-templates/${encodeURIComponent(button.dataset.duplicate)}/duplicate`,{method:'POST',body:'{}'});await loadTemplates();showToast('Template duplicated')}catch(error){showToast(error.message)}}));$$('[data-template-delete]').forEach(button=>button.addEventListener('click',async()=>{try{await api(`/api/workout-templates/${encodeURIComponent(button.dataset.templateDelete)}`,{method:'DELETE',body:'{}'});await loadTemplates();showToast('Template retired. Assignments already made are unaffected.')}catch(error){showToast(error.message)}}))}catch(error){$('#templateList').innerHTML=`<div class="template-item"><span>${escapeText(error.message)}</span></div>`}}
+async function assignTemplate(templateId,button){const client=selectedClient();if(!client)return showToast('Connect a trainee before assigning');const startDate=$('#assignStart').value||new Date().toISOString().slice(0,10),frequency=$('#assignFrequency').value,endDate=$('#assignEnd').value;setBusy(button,true,'Assigning…');try{const result=await api('/api/assigned-workouts',{method:'POST',body:JSON.stringify({templateId,traineeIds:[client.id],startDate,frequency,...(endDate?{endDate}:{})})});const count=result.assignments?.length||1;showToast(count>1?`${count} sessions assigned to ${client.name}`:`Workout assigned to ${client.name}`);await Promise.all([loadDashboard(),loadAssignments()])}catch(error){showToast(error.message)}finally{setBusy(button,false)}}
 $('#templateForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),rows=$$('.builder-exercise');$('#templateError').textContent='';const exercises=rows.map(row=>({name:row.querySelector('[name="exerciseName"]').value,sets:Number(row.querySelector('[name="sets"]').value),reps:Number(row.querySelector('[name="reps"]').value),restSeconds:Number(row.querySelector('[name="rest"]').value)}));setBusy(button,true,'Saving…');try{await api('/api/workout-templates',{method:'POST',body:JSON.stringify({name:new FormData(form).get('name'),description:new FormData(form).get('description'),exercises})});form.reset();$('#builderExercises').innerHTML='';addBuilderExercise();showToast('Workout template saved');await loadTemplates()}catch(error){$('#templateError').textContent=error.message}finally{setBusy(button,false)}});
 addBuilderExercise();initialize();

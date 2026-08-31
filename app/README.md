@@ -1,6 +1,6 @@
 # Ptrainer
 
-Responsive fitness coaching pilot with trainer/trainee roles, invitations, searchable workout templates, a 198-movement offline exercise catalog with custom-name support, direct workout creation and pre-logging edits, workout assignment and logging, progress tracking, date-based meal and hydration journaling, daily nutrition targets and macro summaries, packaged-food barcode lookup and compatible-device camera scanning, notifications, messaging, profiles, versioned privacy consent, personal-data awareness/export/deletion, and test-mode subscriptions.
+Responsive fitness coaching pilot with trainer/trainee roles, invitations, searchable workout templates, a 198-movement offline exercise catalog with custom-name support, direct workout creation and pre-logging edits, template editing, duplication and retirement, workout assignment to one or several trainees on a repeating schedule, set-level logging (reps, load, RPE, pain flag, notes) with resumable drafts and trainer review, a trainer-owned exercise library, private-by-default coaching notes, email verification, progress tracking with kilogram/pound conversion, date-based meal and hydration journaling, daily nutrition targets and macro summaries, packaged-food barcode lookup and compatible-device camera scanning, notifications, messaging, profiles, versioned privacy consent, personal-data awareness/export/deletion, and test-mode subscriptions.
 
 Packaged-food nutrition data is retrieved from [Open Food Facts](https://world.openfoodfacts.org). Configure `FOOD_API_USER_AGENT` with a valid application name and contact URL/email before deployment. Users should verify imported values against the product label.
 
@@ -37,14 +37,14 @@ Run the full smoke suite with `pnpm test`. Liveness is available at `/healthz`, 
 
 ## Production configuration
 
-For production, set `NODE_ENV=production`, a managed PostgreSQL `DATABASE_URL`, `HOST=0.0.0.0`, an HTTPS `APP_ORIGIN`, a 32+ character `METRICS_TOKEN`, `PRIVACY_ORGANIZATION`, `PRIVACY_CONTACT_EMAIL`, and `DATA_STORAGE_REGION`. Ptrainer refuses production startup when privacy operator/contact/storage values are left as local placeholders. Terminate TLS at Caddy or the hosting platform. Demo accounts and demo password-reset tokens are disabled in production mode.
+For production, set `NODE_ENV=production`, a managed PostgreSQL `DATABASE_URL`, `HOST=0.0.0.0`, an HTTPS `APP_ORIGIN`, a 32+ character `METRICS_TOKEN`, `PRIVACY_ORGANIZATION`, `PRIVACY_CONTACT_EMAIL`, `DATA_STORAGE_REGION`, and an account-mail transport (`EMAIL_TRANSPORT=http` plus `EMAIL_HTTP_URL`, `EMAIL_HTTP_TOKEN`, and `EMAIL_FROM`). Ptrainer refuses production startup when privacy operator/contact/storage values are left as local placeholders. Terminate TLS at Caddy or the hosting platform. Demo accounts and demo password-reset tokens are disabled in production mode.
 
 The current pilot supports one app replica. Before enabling Kubernetes or a load balancer with multiple replicas, move sessions, rate limits, idempotency state, and mutable domain caches to PostgreSQL or Redis. See [architecture decisions](../docs/architecture-decisions.md).
 
 ## Pilot limitations
 
 - Checkout is intentionally test-only and never charges a card.
-- Password-reset delivery needs a transactional email provider before public launch.
+- Account mail ships with a log-only transport by default. Set `EMAIL_TRANSPORT=http` with a provider endpoint before launch; production refuses to start without it.
 - The Terms text remains a pilot summary and is not final legal advice.
 - The detailed Privacy Notice is a controlled-pilot draft. Complete the [privacy launch checklist](../docs/privacy-launch-checklist.md) and obtain Canadian legal review before collecting real client information.
 - Run a privacy/legal review and configure backups, monitoring, and retention before handling real health information.

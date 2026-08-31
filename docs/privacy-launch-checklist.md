@@ -20,8 +20,10 @@ The in-app Privacy Notice is a controlled-pilot draft, not a legal certification
 ## Retention and deletion
 
 - Approve exact retention periods for accounts, invitations, reset tokens, relationships, workouts, logs, progress, nutrition, messages, audit events, support records, and backups.
+  - Implemented so far: lapsed invitations are marked expired, and spent password-reset and email-verification tokens are deleted after `TOKEN_RETENTION_DAYS` (default 7). `AUDIT_RETENTION_DAYS` defaults to 0, meaning audit events are never deleted, because that period needs approval rather than a default.
 - Implement and test automated expiry/deletion jobs before replacing the pilot retention warning.
 - Verify that account deletion handles free-text personal information and backup expiry, not only direct identity fields.
+  - Implemented so far: deletion removes progress entries, nutrition entries, workout and set logs, coaching notes, notifications and auth tokens, blanks the message bodies the account wrote, and revokes its relationships. The audit event records counts only. Backup expiry is still outstanding.
 - Document legal holds, fraud/security exceptions, restoration procedures, and proof of deletion.
 
 ## Consent and user rights
