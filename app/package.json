@@ -18,7 +18,7 @@
     "test:e2e": "node ../work/e2e-coaching-journey.mjs"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.3.14",
-    "pg": "8.16.3"
+    "@electric-sql/pglite": "0.5.8",
+    "pg": "8.23.0"
   }
 }
