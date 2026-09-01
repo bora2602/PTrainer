@@ -28,7 +28,7 @@ applyTheme(storedTheme());
 
 function showToast(message,duration=3200){toast.textContent=message;toast.classList.add('show');clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.classList.remove('show'),duration)}
 function setBusy(button,busy,label='Working…'){if(!button)return;button.disabled=busy;if(busy){button.dataset.label=button.textContent;button.textContent=label}else button.textContent=button.dataset.label||button.textContent}
-function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='clients')loadNotes();if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
+function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='clients'){loadNotes();loadInvitations()}if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
 async function api(path,options={}){const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'?{'X-CSRF-Token':state.csrfToken}:{}),...options.headers}});const data=await response.json().catch(()=>({error:{message:'Unexpected server response.'}}));if(!response.ok){const error=new Error(data.error?.message||'Request failed.');error.code=data.error?.code;throw error}return data}
 function initials(name){return name.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}
 function formatDate(value){if(!value)return 'Unscheduled';const date=new Date(value);return Number.isNaN(date.getTime())?'Unscheduled':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
@@ -69,6 +69,21 @@ $('#resendVerification').addEventListener('click',async event=>{
   catch(error){showToast(error.message)}
   finally{setBusy(button,false)}
 });
+
+// A trainer who mistypes an address had no way to take the invitation back, and
+// the duplicate guard then blocked the corrected one until the first expired.
+async function loadInvitations(){
+  if(state.user?.role!=='TRAINER')return;
+  try{
+    const result=await api('/api/invitations');
+    const live=result.invitations.filter(item=>item.live);
+    $('#invitationList').innerHTML=live.map(item=>`<article class="note-row"><div><p>${escapeText(item.email)}</p><small>Sent ${new Date(item.createdAt).toLocaleDateString()} · expires ${new Date(item.expiresAt).toLocaleDateString()}</small></div><div class="note-actions"><button class="secondary-button" data-withdraw="${escapeText(item.id)}">Withdraw</button></div></article>`).join('')||'<div class="template-item"><span>No invitations waiting to be accepted.</span></div>';
+    $$('[data-withdraw]').forEach(button=>button.addEventListener('click',async()=>{
+      try{await api(`/api/invitations/${encodeURIComponent(button.dataset.withdraw)}`,{method:'DELETE',body:'{}'});await loadInvitations();showToast('Invitation withdrawn')}
+      catch(error){showToast(error.message)}
+    }));
+  }catch(error){$('#invitationList').innerHTML=`<div class="template-item"><span>${escapeText(error.message)}</span></div>`}
+}
 
 // --- coaching notes --------------------------------------------------------
 async function loadNotes(){

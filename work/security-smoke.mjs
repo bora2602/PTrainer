@@ -37,6 +37,13 @@ assert.equal(typeof trainerDashboard.data.assignedCount,'number');assert.ok(Arra
 const template=await trainer.request('/api/workout-templates',{method:'POST',body:JSON.stringify({name:'Smoke Test Strength',description:'Secure test',exercises:[{name:'Goblet squat',sets:3,reps:10,restSeconds:60}]})});assert.equal(template.response.status,201);const searchableTemplates=await trainer.request('/api/workout-templates');assert.equal(searchableTemplates.response.status,200);assert.ok(searchableTemplates.data.templates.some(item=>item.id===template.data.template.id&&item.exercises.some(exercise=>exercise.name==='Goblet squat')));
 const assignment=await trainer.request('/api/assigned-workouts',{method:'POST',body:JSON.stringify({templateId:template.data.template.id,traineeId,dueDate:'2026-08-20'})});assert.equal(assignment.response.status,201);
 const editedAssignment=await trainer.request(`/api/assigned-workouts/${assignment.data.assignment.id}`,{method:'PATCH',body:JSON.stringify({name:'Edited Smoke Strength',description:'Trainer updated before logging',dueDate:'2026-08-21',exercises:[{name:'Goblet squat updated',sets:4,reps:8,restSeconds:75}]})});assert.equal(editedAssignment.response.status,200);assert.equal(editedAssignment.data.assignment.templateSnapshot.name,'Edited Smoke Strength');const customAssignment=await trainer.request('/api/assigned-workouts/custom',{method:'POST',body:JSON.stringify({traineeId,name:'Direct Daily Workout',description:'Created from Today workout',dueDate:'2026-08-20',exercises:[{name:'Walking lunge',sets:3,reps:12,restSeconds:60}]})});assert.equal(customAssignment.response.status,201);
+// A run that failed part-way leaves a live invitation behind, and the duplicate
+// guard would then fail this run for a reason that has nothing to do with what
+// broke. Withdraw any outstanding one first so a real failure stays legible.
+const outstanding=await trainer.request('/api/invitations');assert.equal(outstanding.response.status,200);
+for(const item of outstanding.data.invitations.filter(entry=>entry.live&&entry.email==='trainee@ptrainer.local')){
+  const withdrawn=await trainer.request(`/api/invitations/${item.id}`,{method:'DELETE',body:'{}'});assert.equal(withdrawn.response.status,200);
+}
 const invitation=await trainer.request('/api/invitations',{method:'POST',body:JSON.stringify({email:'trainee@ptrainer.local',note:'Join the program.'})});assert.equal(invitation.response.status,201);
 
 const trainee=new Actor();await trainee.session();const traineeLogin=await trainee.login('trainee@ptrainer.local','DemoTrainee1!');assert.equal(traineeLogin.response.status,200);assert.equal(traineeLogin.data.user.role,'TRAINEE');

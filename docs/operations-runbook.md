@@ -52,13 +52,34 @@ docker compose exec -T postgres dropdb -U ptrainer ptrainer_restore_test
 Record the date, the dump restored, and whether counts matched. A drill whose
 result nobody wrote down did not happen.
 
+### Drill log
+
+| Date | Dump | Result |
+|---|---|---|
+| 2026-09-01 | `ptrainer-2026-09-01T01-42-49-250Z.sql` (190 KB, 23 tables) | **Pass.** All 23 tables matched row for row. Restored schema carried 16 migrations, 54 indexes, 29 foreign keys, 211 check constraints. The application was then started against the restored copy: sign-in returned 200 and the trainee dashboard read back all 31 assignments. |
+
+The last step is the one that matters. Matching row counts only prove rows
+copied; starting the application against the restore proves the schema, the
+constraints and the data are actually usable.
+
 ## Error monitoring
 
 The application emits structured JSON to stdout — one object per request and per
 error, carrying a request id, route, status and duration, and deliberately never
-message bodies, nutrition values, passwords or tokens. Nothing collects it yet.
+message bodies, nutrition values, passwords or tokens. That remains the primary
+record.
 
-Before a pilot, point stdout at a collector and alert on:
+Set `ERROR_WEBHOOK_URL` (https only, optional `ERROR_WEBHOOK_TOKEN`) and the
+events below are also POSTed as JSON to that endpoint as they happen. It is
+provider-agnostic — anything that accepts a JSON body works — and off by default.
+Reporting is capped at 60 events a minute so one outage cannot become two, with
+the suppressed count attached to the next report. A failed report is swallowed:
+there is nowhere left to report it to, and the log still has the original.
+
+Only metadata leaves the process. A crash reporter that exfiltrated health data
+to a third party would be a worse problem than the crash.
+
+Alert on:
 
 | Signal | Why |
 |---|---|
@@ -68,6 +89,8 @@ Before a pilot, point stdout at a collector and alert on:
 | `event: audit_write_failed` | An audited action completed without its audit record. |
 | `event: retention_sweep_failed` | Expiry and cleanup have stopped running. |
 | `/readyz` failing | The database is unreachable. |
+| `event: uncaught_exception` | Escaped every handler; the process restarts. |
+| `event: unhandled_rejection` | A promise failed with nobody watching. |
 
 Any collector that reads container stdout works (the hosting platform's own log
 drain, Loki, a hosted service). Choose one, then record it in the privacy

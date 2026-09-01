@@ -5,7 +5,8 @@
 // harness to assert "every input has a label" would cost more than it returns.
 // What a static check can prove, it proves here. What it cannot - contrast in
 // the rendered theme, focus order, screen-reader phrasing - is called out at the
-// bottom as still needing a person.
+// bottom as still needing a person. Colour contrast is measured separately by
+// work/contrast-check.mjs, which computes the real WCAG ratios from the tokens.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -79,5 +80,6 @@ console.log(JSON.stringify({
   statusMessagesAnnounced: 'pass',
   imagesHaveAlt: 'pass',
   touchTargets: 'pass',
-  stillNeedsAPerson: 'contrast in both themes, focus order, and screen-reader phrasing'
+  // Contrast is now measured by work/contrast-check.mjs, so it comes off this list.
+  stillNeedsAPerson: 'focus order and screen-reader phrasing'
 }, null, 2));

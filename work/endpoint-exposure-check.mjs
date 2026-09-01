@@ -30,6 +30,7 @@ const PROTECTED = [
   ['GET', '/api/notifications'],
   ['GET', '/api/subscription'], ['POST', '/api/billing/test-checkout'],
   ['GET', '/api/trainer-notes'], ['POST', '/api/trainer-notes'],
+  ['DELETE', '/api/invitations/inv_probe'],
   ['GET', '/api/progress-metrics'], ['GET', '/api/exercises/ex_probe'],
   // Development-only hooks, listed here so the probe proves they still refuse
   // an unauthenticated caller rather than being trusted to be harmless.

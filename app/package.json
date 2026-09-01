@@ -14,7 +14,7 @@
     "test:unit": "node --test validation.test.mjs",
     "test:api": "node ../work/security-smoke.mjs && node ../work/workout-logging-check.mjs && node ../work/phase2-check.mjs && node ../work/phase3-check.mjs && node ../work/phase4-check.mjs",
     "test:authz": "node ../work/endpoint-exposure-check.mjs && node ../work/cross-account-check.mjs",
-    "test:static": "node ../work/accessibility-check.mjs",
+    "test:static": "node ../work/accessibility-check.mjs && node ../work/contrast-check.mjs",
     "test:e2e": "node ../work/e2e-coaching-journey.mjs"
   },
   "dependencies": {

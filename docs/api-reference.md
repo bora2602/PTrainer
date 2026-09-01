@@ -73,6 +73,8 @@ counts purged).
 ### Coaching
 
 `GET /api/dashboard` · `GET /api/relationships` ·
+`GET /api/invitations` (the trainer's own; the token is never returned) ·
+`DELETE /api/invitations/:id` (withdraw a pending one) ·
 `PATCH /api/relationships/:trainerId/:traineeId` (status and permissions are
 independent edits; permissions are trainee-only) · `POST /api/invitations` ·
 `POST /api/invitations/:token/accept` · `GET|POST /api/trainer-notes` ·
