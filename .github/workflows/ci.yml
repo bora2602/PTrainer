@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: app
@@ -26,22 +26,67 @@ jobs:
           cache: pnpm
           cache-dependency-path: app/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+
+      # Fast and server-free, so a broken validation rule fails in seconds
+      # rather than after the whole stack has started.
+      - name: Unit tests
+        run: pnpm run test:unit
+
+      # Static markup invariants: no server needed, so this fails fast too.
+      - name: Accessibility check
+        run: pnpm run test:static
+
       - run: pnpm migrate
       - name: Start Ptrainer
         run: pnpm start > /tmp/ptrainer-ci.log 2>&1 &
       - name: Wait for readiness
         run: |
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             curl --fail --silent http://127.0.0.1:4173/readyz && exit 0
             sleep 1
           done
           exit 1
-      - run: pnpm test
+
+      - name: API and behaviour tests
+        run: pnpm run test:api
+
+      - name: End-to-end coaching journey
+        run: pnpm run test:e2e
+
+      # CLAUDE.md section 8 requires ID-tampering coverage on anything touching
+      # authorization. These probes existed but nothing ran them until now.
+      - name: Authorization probes
+        run: pnpm run test:authz
+
       - name: Upload server log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ptrainer-server-log
           path: /tmp/ptrainer-ci.log
+
       - name: Validate container build
         run: docker build --tag ptrainer:ci .
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Reported separately from the test job: a newly disclosed advisory in a
+      # dependency should be visible without making an unrelated pull request
+      # look like it broke the build.
+      - name: Dependency audit
+        run: pnpm audit --audit-level high

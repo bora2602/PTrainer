@@ -24,7 +24,8 @@ const positiveInt = (value, fallback) => {
 export async function runRetentionSweep(query, log = () => {}) {
   const tokenDays = positiveInt(process.env.TOKEN_RETENTION_DAYS, 7);
   const auditDays = positiveInt(process.env.AUDIT_RETENTION_DAYS, 0);
-  const summary = { expiredInvitations: 0, resetTokens: 0, verificationTokens: 0, auditEvents: 0 };
+  const sessionHours = positiveInt(process.env.SESSION_RETENTION_HOURS, 24);
+  const summary = { expiredInvitations: 0, resetTokens: 0, verificationTokens: 0, staleSessions: 0, auditEvents: 0 };
   try {
     const invitations = await query(
       "UPDATE invitations SET status='EXPIRED' WHERE status='PENDING' AND expires_at < now() RETURNING id");
@@ -39,6 +40,12 @@ export async function runRetentionSweep(query, log = () => {}) {
       `DELETE FROM email_verification_tokens WHERE (used_at IS NOT NULL OR expires_at < now())
          AND created_at < now() - ($1 || ' days')::interval RETURNING token_hash`, [String(tokenDays)]);
     summary.verificationTokens = verifications.rowCount;
+
+    // A session row outlives its cookie only as dead weight.
+    const staleSessions = await query(
+      `DELETE FROM sessions WHERE last_seen < now() - ($1 || ' hours')::interval RETURNING sid`,
+      [String(sessionHours)]);
+    summary.staleSessions = staleSessions.rowCount;
 
     if (auditDays > 0) {
       const events = await query(

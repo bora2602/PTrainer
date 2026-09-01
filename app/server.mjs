@@ -9,6 +9,47 @@ import { exerciseCatalog } from './exercise-catalog.mjs';
 import { lookupFoodProduct, normalizeBarcode, searchFoodsByName, normalizeFoodQuery } from './food-lookup.mjs';
 import { sendEmail, emailTransport, emailConfigProblem, verificationEmail, resetEmail, invitationEmail } from './email.mjs';
 import { startRetentionSweeps, runRetentionSweep } from './retention.mjs';
+import { BoundedMap } from './bounded-map.mjs';
+import {
+  todayIn,
+  cleanEmail,
+  validEmail,
+  validName,
+  validPassword,
+  normalizeWorkoutInput,
+  NUTRITION_ENTRY_TYPES,
+  validDateOnly,
+  nutritionValues,
+  normalizeNutritionEntry,
+  LOAD_UNITS,
+  draftKey,
+  numberOrNull,
+  boundedNumber,
+  normalizeSetRows,
+  exerciseCompletion,
+  UNIT_DIMENSION,
+  CANONICAL_UNIT,
+  UNIT_FACTOR,
+  PROGRESS_UNITS,
+  DISPLAY_UNIT,
+  convertUnit,
+  normalizedProgressValue,
+  exerciseNameKey,
+  EXERCISE_DIFFICULTY,
+  normalizeExerciseInput,
+  normalizeTrainerNote,
+  normalizeProgressEntry,
+  SCHEDULE_STEP_DAYS,
+  normalizeSchedule,
+  RELATIONSHIP_PERMISSION_DEFAULTS,
+  RELATIONSHIP_PERMISSION_KEYS,
+  relationshipPermissions,
+  normalizeRelationshipPermissions,
+  encodeCursor,
+  decodeCursor,
+  pageLimit,
+  nextCursorFor
+} from './validation.mjs';
 
 const scrypt = promisify(scryptCallback);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -32,8 +73,8 @@ const TRUST_PROXY = String(process.env.TRUST_PROXY || '') === 'true';
 // reached by a name that is not APP_ORIGIN, so extra origins can be allowed.
 const ALLOWED_ORIGINS = new Set([APP_ORIGIN, ...String(process.env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)]);
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
-const COOKIE = 'ptrainer_sid';
 const SESSION_TTL = 60 * 60 * 1000;
+const COOKIE = 'ptrainer_sid';
 // Five new accounts an hour from one address is the right ceiling for a public
 // deployment and far too tight for a test run that has to create several. The
 // production number is unchanged; only development and CI get the headroom.
@@ -42,81 +83,29 @@ const REGISTRATION_LIMIT = IS_PRODUCTION ? 5 : 100;
 // public deployment and stops a test suite dead on its second run. Production
 // keeps the tight number.
 const LOGIN_LIMIT = IS_PRODUCTION ? 8 : 500;
-const types = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml' };
+const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml' };
 
 const users = new Map();
 const usersByEmail = new Map();
-const sessions = new Map();
+const sessions = new BoundedMap({ maxEntries: 20000, ttlMs: SESSION_TTL });
 const invitations = new Map();
 const relationships = new Map();
 const workoutTemplates = new Map();
 const assignments = new Map();
-const workoutSaves = new Map();
-const rateBuckets = new Map();
-const passwordResets = new Map();
-const foodProductCache = new Map();
-const foodSearchCache = new Map();
+// Idempotency replay cache. The durable answer is the workout_logs row; this
+// only saves the lookup, so dropping an entry costs a query and nothing else.
+const workoutSaves = new BoundedMap({ maxEntries: 5000, ttlMs: 24 * 60 * 60 * 1000 });
+// One bucket per address-and-action pair, which without eviction is one entry
+// per address that ever touched the app.
+const rateBuckets = new BoundedMap({ maxEntries: 50000, ttlMs: 60 * 60 * 1000 });
+const passwordResets = new BoundedMap({ maxEntries: 10000, ttlMs: 60 * 60 * 1000 });
+const foodProductCache = new BoundedMap({ maxEntries: 5000, ttlMs: 6 * 60 * 60 * 1000 });
+const foodSearchCache = new BoundedMap({ maxEntries: 2000, ttlMs: 30 * 60 * 1000 });
 const telemetry={startedAt:Date.now(),requests:0,errors:0,totalDurationMs:0,byStatus:new Map()};
 
 const id = prefix => `${prefix}_${randomBytes(10).toString('hex')}`;
 const tokenDigest = token => createHash('sha256').update(token).digest('base64url');
 const publicUser = user => ({ id:user.id, name:user.name, email:user.email, role:user.role, emailVerified:Boolean(user.emailVerifiedAt) });
-const cleanEmail = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
-const validEmail = value => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const validName = value => typeof value === 'string' && value.trim().length >= 2 && value.trim().length <= 80;
-const validPassword = value => typeof value === 'string' && value.length >= 10 && value.length <= 128 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
-function normalizeWorkoutInput(body){const name=typeof body.name==='string'?body.name.trim():'',description=typeof body.description==='string'?body.description.trim():'',dueDate=String(body.dueDate||'').slice(0,10),parsedDate=dueDate?new Date(`${dueDate}T00:00:00.000Z`):null,validDate=!dueDate||/^\d{4}-\d{2}-\d{2}$/.test(dueDate)&&!Number.isNaN(parsedDate.getTime())&&parsedDate.toISOString().slice(0,10)===dueDate;if(name.length<3||name.length>100||description.length>500||!Array.isArray(body.exercises)||body.exercises.length<1||body.exercises.length>30||!validDate)return null;const exercises=body.exercises.map(item=>({name:String(item.name||'').trim(),sets:Number(item.sets),reps:Number(item.reps),restSeconds:Number(item.restSeconds)}));if(exercises.some(item=>item.name.length<2||item.name.length>100||!Number.isInteger(item.sets)||item.sets<1||item.sets>20||!Number.isInteger(item.reps)||item.reps<1||item.reps>1000||!Number.isInteger(item.restSeconds)||item.restSeconds<0||item.restSeconds>900))return null;return{name,description,dueDate,exercises}}
-const NUTRITION_ENTRY_TYPES=new Set(['BREAKFAST','LUNCH','DINNER','SNACK','DAILY','WATER']);
-const FOOD_DATA_SOURCES=new Set(['OPEN_FOOD_FACTS','PTRAINER_CATALOG']);
-function validDateOnly(value){const text=String(value||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(text))return false;const parsed=new Date(`${text}T00:00:00.000Z`);return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===text}
-const LOAD_UNITS=new Set(['kg','lb']),DISTANCE_UNITS=new Set(['m','km','mi']);
-// A draft is keyed by assignment rather than by a client token, and the colon
-// is deliberate: the client-supplied idempotency format rejects it, so a caller
-// cannot craft a submission that collides with somebody else's draft row.
-const draftKey=assignmentId=>`draft:${assignmentId}`;
-const numberOrNull=value=>value===''||value==null?null:Number(value);
-const boundedNumber=(value,min,max,integer)=>value===null||Number.isFinite(value)&&value>=min&&value<=max&&(!integer||Number.isInteger(value));
-// Actual performance, checked against the assignment's own exercise list so a
-// forged index cannot write rows for a movement the workout never prescribed.
-// Returns null for invalid input rather than throwing, like the other
-// normalizers in this file.
-function normalizeSetRows(rows,exerciseCount){
-  if(rows==null)return [];
-  if(!Array.isArray(rows)||rows.length>200)return null;
-  const seen=new Set(),normalized=[];
-  for(const row of rows){
-    if(!row||typeof row!=='object')return null;
-    const exerciseIndex=Number(row.exerciseIndex),setIndex=Number(row.setIndex);
-    if(!Number.isInteger(exerciseIndex)||exerciseIndex<0||exerciseIndex>=exerciseCount)return null;
-    if(!Number.isInteger(setIndex)||setIndex<0||setIndex>=50)return null;
-    const slot=`${exerciseIndex}:${setIndex}`;if(seen.has(slot))return null;seen.add(slot);
-    const reps=numberOrNull(row.reps),loadValue=numberOrNull(row.loadValue),durationSeconds=numberOrNull(row.durationSeconds),distanceValue=numberOrNull(row.distanceValue),restSeconds=numberOrNull(row.restSeconds),exertion=numberOrNull(row.exertion);
-    if(!boundedNumber(reps,0,1000,true)||!boundedNumber(loadValue,0,100000,false)||!boundedNumber(durationSeconds,0,86400,true))return null;
-    if(!boundedNumber(distanceValue,0,100000,false)||!boundedNumber(restSeconds,0,3600,true)||!boundedNumber(exertion,1,10,false))return null;
-    const loadUnit=row.loadUnit==null||row.loadUnit===''?null:String(row.loadUnit).toLowerCase();
-    const distanceUnit=row.distanceUnit==null||row.distanceUnit===''?null:String(row.distanceUnit).toLowerCase();
-    // A measurement without its unit is not a measurement.
-    if(loadUnit!==null&&!LOAD_UNITS.has(loadUnit)||loadValue!==null&&loadUnit===null)return null;
-    if(distanceUnit!==null&&!DISTANCE_UNITS.has(distanceUnit)||distanceValue!==null&&distanceUnit===null)return null;
-    const note=String(row.note||'').trim();if(note.length>500)return null;
-    normalized.push({exerciseIndex,setIndex,completed:Boolean(row.completed),reps,loadValue,loadUnit:loadValue===null?null:loadUnit,durationSeconds,distanceValue,distanceUnit:distanceValue===null?null:distanceUnit,restSeconds,exertion,painFlag:Boolean(row.painFlag),note});
-  }
-  return normalized.sort((a,b)=>a.exerciseIndex-b.exerciseIndex||a.setIndex-b.setIndex);
-}
-// Explicit per-exercise flags win when the client sends them; otherwise an
-// exercise counts as done once every set recorded against it is done.
-function exerciseCompletion(body,sets,exerciseCount){
-  if(Array.isArray(body.exercises)){
-    if(body.exercises.length>exerciseCount)return null;
-    const flags=new Array(exerciseCount).fill(false);
-    body.exercises.forEach((item,index)=>{flags[index]=Boolean(item&&item.completed)});
-    return flags;
-  }
-  return Array.from({length:exerciseCount},(unusedValue,index)=>{
-    const own=sets.filter(row=>row.exerciseIndex===index);
-    return own.length>0&&own.every(row=>row.completed);
-  });
-}
 async function writeSetRows(tx,logId,sets){
   await tx('DELETE FROM set_logs WHERE workout_log_id=$1',[logId]);
   for(const row of sets)await tx('INSERT INTO set_logs(id,workout_log_id,exercise_index,set_index,completed,reps,load_value,load_unit,duration_seconds,distance_value,distance_unit,rest_seconds,exertion,pain_flag,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',[id('set'),logId,row.exerciseIndex,row.setIndex,row.completed,row.reps,row.loadValue,row.loadUnit,row.durationSeconds,row.distanceValue,row.distanceUnit,row.restSeconds,row.exertion,row.painFlag,row.note]);
@@ -139,80 +128,7 @@ function logAccess(user,assignment,writing=false){
   // not, and needs their say-so.
   return !writing||relationshipPermissions(relationship).log_on_behalf;
 }
-// Unit conversion keeps what the trainee typed and derives what charts read, so
-// a profile switching between metric and imperial never rewrites history.
-const UNIT_DIMENSION={kg:'MASS',lb:'MASS',cm:'LENGTH',in:'LENGTH',percent:'RATIO'};
-const CANONICAL_UNIT={MASS:'kg',LENGTH:'cm',RATIO:'percent'};
-const UNIT_FACTOR={kg:1,lb:0.45359237,cm:1,in:2.54,percent:1};
-const PROGRESS_UNITS=new Set(Object.keys(UNIT_DIMENSION));
-const DISPLAY_UNIT={METRIC:{MASS:'kg',LENGTH:'cm',RATIO:'percent'},IMPERIAL:{MASS:'lb',LENGTH:'in',RATIO:'percent'}};
-// Returns null rather than a wrong number when the units measure different
-// things, so a caller cannot quietly turn centimetres into kilograms.
-function convertUnit(value,fromUnit,toUnit){
-  if(!Number.isFinite(value))return null;
-  if(fromUnit===toUnit)return value;
-  const from=UNIT_DIMENSION[fromUnit],to=UNIT_DIMENSION[toUnit];
-  if(!from||!to||from!==to)return null;
-  return Math.round(value*UNIT_FACTOR[fromUnit]/UNIT_FACTOR[toUnit]*1000)/1000;
-}
-function normalizedProgressValue(value,unit){
-  const canonical=CANONICAL_UNIT[UNIT_DIMENSION[unit]];
-  if(!canonical)return null;
-  return {value:convertUnit(value,unit,canonical),unit:canonical};
-}
 const progressMetrics=new Map();
-const exerciseNameKey=name=>String(name||'').trim().toLocaleLowerCase();
-const EXERCISE_DIFFICULTY=new Set(['BEGINNER','INTERMEDIATE','ADVANCED']);
-function normalizeExerciseInput(body){
-  const name=String(body.name||'').trim(),muscleGroup=String(body.muscleGroup||'').trim(),equipment=String(body.equipment||'').trim();
-  const instructions=String(body.instructions||'').trim(),difficulty=String(body.difficulty||'INTERMEDIATE').toUpperCase();
-  const mediaUrl=String(body.mediaUrl||'').trim();
-  if(name.length<2||name.length>100||muscleGroup.length>50||equipment.length>50||instructions.length>2000)return null;
-  if(!EXERCISE_DIFFICULTY.has(difficulty))return null;
-  // Only https media is accepted: an http reference on an https page is blocked
-  // by the browser anyway, and other schemes have no business here.
-  if(mediaUrl&&(mediaUrl.length>500||!mediaUrl.startsWith('https://')))return null;
-  return {name,muscleGroup,equipment,instructions,difficulty,mediaUrl:mediaUrl||null};
-}
-function normalizeTrainerNote(body){
-  const text=String(body.body||'').trim(),visibility=String(body.visibility||'PRIVATE').toUpperCase();
-  if(text.length<1||text.length>2000||!['PRIVATE','SHARED'].includes(visibility))return null;
-  return {body:text,visibility};
-}
-function normalizeProgressEntry(body){
-  const metricType=String(body.metricType||'').trim().toLowerCase(),unit=String(body.unit||'').trim().toLowerCase();
-  const value=Number(body.value),measuredAt=new Date(body.measuredAt||Date.now());
-  if(!/^[a-z][a-z0-9_]{1,49}$/.test(metricType)||!PROGRESS_UNITS.has(unit))return null;
-  if(!Number.isFinite(value)||value<0||value>10000||Number.isNaN(measuredAt.getTime()))return null;
-  // A known metric fixes what it measures, so logging a waist in kilograms is a
-  // validation failure rather than a chart that silently lies later.
-  const definition=progressMetrics.get(metricType);
-  if(definition&&definition.dimension!==UNIT_DIMENSION[unit])return null;
-  const normalized=normalizedProgressValue(value,unit);
-  if(!normalized)return null;
-  return {metricType,unit,value,normalizedValue:normalized.value,normalizedUnit:normalized.unit,measuredAt:measuredAt.toISOString(),note:String(body.note||'').trim().slice(0,500)};
-}
-const SCHEDULE_STEP_DAYS={DAILY:1,WEEKLY:7,BIWEEKLY:14};
-// Recurrence is expanded here, at assign time, into one dated occurrence per
-// session. Storing a rule instead would mean re-deriving history every time the
-// rule changed, which is exactly what snapshotting exists to prevent.
-function normalizeSchedule(body){
-  const frequency=String(body.frequency||'ONCE').toUpperCase();
-  const startDate=String(body.startDate||body.dueDate||'').slice(0,10);
-  const endDate=String(body.endDate||'').slice(0,10);
-  if(!['ONCE','DAILY','WEEKLY','BIWEEKLY'].includes(frequency))return null;
-  if(startDate&&!validDateOnly(startDate))return null;
-  if(endDate&&!validDateOnly(endDate))return null;
-  if(frequency==='ONCE')return {frequency,startDate:startDate||null,endDate:null,dates:[startDate||null]};
-  // A repeat with no end has no defensible number of occurrences to create.
-  if(!startDate||!endDate||endDate<startDate)return null;
-  const step=SCHEDULE_STEP_DAYS[frequency],dates=[];
-  const limit=new Date(`${endDate}T00:00:00.000Z`).getTime();
-  for(let cursor=new Date(`${startDate}T00:00:00.000Z`).getTime();cursor<=limit&&dates.length<52;cursor+=step*86400000)dates.push(new Date(cursor).toISOString().slice(0,10));
-  if(!dates.length)return null;
-  return {frequency,startDate,endDate,dates};
-}
-
 // Account mail carries the only route back into a locked-out account, so a
 // verification token is stored as a hash and checked against the address it was
 // issued for - reissuing after an address change must not verify the old one.
@@ -235,10 +151,9 @@ async function seedExerciseLibrary(){
   log('info','exercise_library_seeded',{count:exerciseCatalog.length});
 }
 
-function nutritionValues(body){const numberOrNull=value=>value===''||value==null?null:Number(value),values={calories:numberOrNull(body.calories),proteinG:numberOrNull(body.proteinG),carbsG:numberOrNull(body.carbsG),fatG:numberOrNull(body.fatG),waterMl:numberOrNull(body.waterMl)};if(Object.values(values).some(value=>value!==null&&(!Number.isFinite(value)||value<0||value>100000))||values.calories!==null&&!Number.isInteger(values.calories)||values.waterMl!==null&&!Number.isInteger(values.waterMl))return null;return values}
-function normalizeNutritionEntry(body){const values=nutritionValues(body),entryDate=String(body.entryDate||''),entryType=String(body.entryType||'').toUpperCase(),description=String(body.description||'').trim(),rawBarcode=String(body.foodBarcode||''),foodBarcode=rawBarcode?normalizeBarcode(rawBarcode):null,foodName=String(body.foodName||'').trim(),foodBrand=String(body.foodBrand||'').trim(),foodQuantityG=body.foodQuantityG===''||body.foodQuantityG==null?null:Number(body.foodQuantityG),dataSource=FOOD_DATA_SOURCES.has(body.dataSource)?body.dataSource:null;if(!values||!validDateOnly(entryDate)||!NUTRITION_ENTRY_TYPES.has(entryType)||description.length>1000||foodName.length>200||foodBrand.length>200||rawBarcode&&!foodBarcode||foodQuantityG!==null&&(!Number.isFinite(foodQuantityG)||foodQuantityG<=0||foodQuantityG>100000)||(!description&&Object.values(values).every(value=>value===null)))return null;if(!foodBarcode&&!foodName)return{entryDate,entryType,description,...values,foodBarcode:null,foodName:null,foodBrand:null,foodQuantityG:null,dataSource:null};return{entryDate,entryType,description,...values,foodBarcode,foodName:foodName||'Packaged food',foodBrand,foodQuantityG,dataSource}}
 const log=(level,event,fields={})=>console.log(JSON.stringify({timestamp:new Date().toISOString(),level,event,...fields}));
 const routeLabel=path=>String(path||'/').replace(/^\/api\/invitations\/[^/]+\/accept$/,'/api/invitations/:token/accept').replace(/^\/api\/assigned-workouts\/[^/]+\/logs$/,'/api/assigned-workouts/:id/logs').replace(/^\/api\/assigned-workouts\/[^/]+$/,'/api/assigned-workouts/:id').replace(/^\/api\/food-products\/[^/]+$/,'/api/food-products/:barcode').replace(/^\/api\/nutrition-entries\/[^/]+$/,'/api/nutrition-entries/:id').replace(/^\/api\/notifications\/[^/]+\/read$/,'/api/notifications/:id/read').replace(/^\/api\/relationships\/[^/]+\/[^/]+$/,'/api/relationships/:trainerId/:traineeId').replace(/^\/api\/exercises\/[^/]+$/,'/api/exercises/:id').replace(/^\/api\/workout-templates\/[^/]+\/duplicate$/,'/api/workout-templates/:id/duplicate').replace(/^\/api\/workout-templates\/[^/]+$/,'/api/workout-templates/:id').replace(/^\/api\/progress-entries\/[^/]+$/,'/api/progress-entries/:id').replace(/^\/api\/trainer-notes\/[^/]+$/,'/api/trainer-notes/:id');
+
 
 await initializeDatabase();
 
@@ -312,13 +227,53 @@ function textResponse(res,status,payload,contentType='text/plain; charset=utf-8'
 function metricsPayload(){const uptime=(Date.now()-telemetry.startedAt)/1000,average=telemetry.requests?telemetry.totalDurationMs/telemetry.requests:0,statusLines=[...telemetry.byStatus].map(([status,count])=>`ptrainer_http_responses_total{status="${status}"} ${count}`).join('\n');return`# HELP ptrainer_up 1 when the process is running\n# TYPE ptrainer_up gauge\nptrainer_up 1\n# TYPE ptrainer_uptime_seconds gauge\nptrainer_uptime_seconds ${uptime.toFixed(3)}\n# TYPE ptrainer_http_requests_total counter\nptrainer_http_requests_total ${telemetry.requests}\n# TYPE ptrainer_http_errors_total counter\nptrainer_http_errors_total ${telemetry.errors}\n# TYPE ptrainer_http_request_duration_average_ms gauge\nptrainer_http_request_duration_average_ms ${average.toFixed(3)}\n${statusLines}\n`}
 function parseCookies(req){return Object.fromEntries((req.headers.cookie||'').split(';').map(v=>v.trim()).filter(Boolean).map(v=>{const i=v.indexOf('=');return[v.slice(0,i),decodeURIComponent(v.slice(i+1))]}))}
 function setSessionCookie(res,sid,maxAge=3600){res.setHeader('Set-Cookie',`${COOKIE}=${sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${IS_PRODUCTION?'; Secure':''}`)}
-function getSession(req,res){
-  const sid=parseCookies(req)[COOKIE];let session=sid&&sessions.get(sid);
-  if(session&&Date.now()-session.lastSeen>SESSION_TTL){sessions.delete(sid);session=null}
-  if(!session){const newSid=randomBytes(32).toString('base64url');session={sid:newSid,userId:null,csrf:randomBytes(32).toString('base64url'),lastSeen:Date.now()};sessions.set(newSid,session);setSessionCookie(res,newSid)}
-  session.lastSeen=Date.now();return session;
+// Signed-in sessions are written to the database so a deploy stops signing
+// everyone out, and are cached here so the common case stays a memory read.
+// Anonymous sessions carry nothing but a CSRF token and are never persisted:
+// one row per unauthenticated request would trade a memory leak for a table
+// that grows just as fast.
+const SESSION_PERSIST_INTERVAL_MS = 60 * 1000;
+function cacheSession(session){sessions.set(session.sid,session);return session}
+function newSessionRecord(userId){return{sid:randomBytes(32).toString('base64url'),userId,csrf:randomBytes(32).toString('base64url'),lastSeen:Date.now(),persistedAt:userId?Date.now():0}}
+async function persistSession(session){
+  if(!session.userId)return;
+  await query('INSERT INTO sessions(sid,user_id,csrf,last_seen) VALUES($1,$2,$3,now()) ON CONFLICT(sid) DO UPDATE SET last_seen=now()',[session.sid,session.userId,session.csrf]);
+  session.persistedAt=Date.now();
 }
-function rotateSession(res,oldSession,userId=null){sessions.delete(oldSession.sid);const sid=randomBytes(32).toString('base64url');const session={sid,userId,csrf:randomBytes(32).toString('base64url'),lastSeen:Date.now()};sessions.set(sid,session);setSessionCookie(res,sid);return session}
+async function destroySession(sid){sessions.delete(sid);await query('DELETE FROM sessions WHERE sid=$1',[sid])}
+async function destroyUserSessions(userId,exceptSid=null){
+  for(const [sid,item] of sessions)if(item.userId===userId&&sid!==exceptSid)sessions.delete(sid);
+  const removed=await query('DELETE FROM sessions WHERE user_id=$1 AND ($2::text IS NULL OR sid<>$2) RETURNING sid',[userId,exceptSid]);
+  return removed.rowCount;
+}
+async function getSession(req,res){
+  const sid=parseCookies(req)[COOKIE];
+  let session=sid?sessions.get(sid):null;
+  if(!session&&sid){
+    // A cache miss is normal after a restart, so the row is the fallback rather
+    // than a reason to sign somebody out.
+    const stored=await query('SELECT sid,user_id,csrf,last_seen FROM sessions WHERE sid=$1',[sid]);
+    if(stored.rowCount){
+      const row=stored.rows[0];
+      session=cacheSession({sid:row.sid,userId:row.user_id,csrf:row.csrf,lastSeen:new Date(row.last_seen).getTime(),persistedAt:new Date(row.last_seen).getTime()});
+    }
+  }
+  if(session&&Date.now()-session.lastSeen>SESSION_TTL){await destroySession(session.sid);session=null}
+  if(session&&session.userId&&!users.has(session.userId)){await destroySession(session.sid);session=null}
+  if(!session){session=cacheSession(newSessionRecord(null));setSessionCookie(res,session.sid)}
+  session.lastSeen=Date.now();
+  // Writing last_seen on every request would make each one a database write for
+  // no benefit, so the row is refreshed at most once a minute.
+  if(session.userId&&Date.now()-session.persistedAt>SESSION_PERSIST_INTERVAL_MS)await persistSession(session);
+  return session;
+}
+async function rotateSession(res,oldSession,userId=null){
+  await destroySession(oldSession.sid);
+  const session=cacheSession(newSessionRecord(userId));
+  await persistSession(session);
+  setSessionCookie(res,session.sid);
+  return session;
+}
 function sessionUser(session){return session.userId?users.get(session.userId):null}
 function authenticated(res,session){const user=sessionUser(session);if(!user){json(res,401,{error:{code:'AUTH_REQUIRED',message:'Please sign in.'}});return null}return user}
 function requireRole(res,user,role){if(user.role!==role){json(res,403,{error:{code:'FORBIDDEN',message:`${role.toLowerCase()} access required.`}});return false}return true}
@@ -344,26 +299,17 @@ function mutationAllowed(req,res,session){const origin=req.headers.origin;if(ori
 async function readJson(req,res,maxBytes=32768){let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>maxBytes){json(res,413,{error:{code:'PAYLOAD_TOO_LARGE',message:'Request is too large.'}});return null}chunks.push(chunk)}try{return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}')}catch{json(res,400,{error:{code:'JSON_INVALID',message:'Malformed JSON.'}});return null}}
 function rateLimit(key,limit,windowMs){const now=Date.now();const active=(rateBuckets.get(key)||[]).filter(t=>now-t<windowMs);if(active.length>=limit)return false;active.push(now);rateBuckets.set(key,active);return true}
 async function audit(actorId,action,entityType,entityId=null,metadata={}){try{await query('INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,$4,$5,$6)',[id('audit'),actorId,action,entityType,entityId,JSON.stringify(metadata)])}catch(error){console.error('audit_write_failed',{action,entityType,message:error.message})}}
-async function trainerDashboard(user){
+async function trainerDashboard(user,timezone){
   const traineeIds=[...relationships.values()].filter(r=>r.trainerId===user.id&&r.status==='ACTIVE').map(r=>r.traineeId),trainerAssignments=[...assignments.values()].filter(a=>a.trainerId===user.id&&a.status!=='ARCHIVED'),completed=trainerAssignments.filter(a=>a.status==='COMPLETED').length;
   const progress=traineeIds.length?await query("SELECT count(*)::int AS count FROM progress_entries WHERE trainee_id = ANY($1) AND measured_at >= now() - interval '7 days'",[traineeIds]):{rows:[{count:0}]};
   const clients=traineeIds.map(userId=>{const client=publicUser(users.get(userId)),clientAssignments=trainerAssignments.filter(a=>a.traineeId===userId),clientCompleted=clientAssignments.filter(a=>a.status==='COMPLETED').length;return{...client,assignedCount:clientAssignments.length,completedCount:clientCompleted,completionRate:clientAssignments.length?Math.round(clientCompleted/clientAssignments.length*100):0,lastWorkout:clientAssignments.sort((a,b)=>String(b.dueDate).localeCompare(String(a.dueDate)))[0]?.templateSnapshot?.name||'No program assigned'}});
-  const overdue=trainerAssignments.filter(a=>a.status==='ASSIGNED'&&a.dueDate&&new Date(a.dueDate)<new Date(new Date().toISOString().slice(0,10)));
+  // Dates are compared as calendar strings in the viewer's zone rather than as
+  // instants, so nothing is overdue until it is actually yesterday for them.
+  const today=todayIn(timezone);
+  const overdue=trainerAssignments.filter(a=>a.status==='ASSIGNED'&&a.dueDate&&String(a.dueDate).slice(0,10)<today);
   return{kind:'TRAINER',activeClients:traineeIds.length,clients,workoutsCompleted:completed,assignedCount:trainerAssignments.length,completionRate:trainerAssignments.length?Math.round(completed/trainerAssignments.length*100):0,progressUpdates:Number(progress.rows[0]?.count||0),attentionCount:overdue.length,attentionItems:overdue.slice(0,5).map(a=>({id:a.id,trainee:publicUser(users.get(a.traineeId)),name:a.templateSnapshot.name,dueDate:a.dueDate})),upcoming:trainerAssignments.filter(a=>!['COMPLETED','SKIPPED'].includes(a.status)).sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))).slice(0,6).map(a=>({id:a.id,trainee:publicUser(users.get(a.traineeId)),name:a.templateSnapshot.name,dueDate:a.dueDate,status:a.status}))};
 }
-async function traineeDashboard(user){const active=[...assignments.values()].filter(a=>a.traineeId===user.id&&a.status!=='ARCHIVED').sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))),completed=active.filter(a=>a.status==='COMPLETED').length,relationship=[...relationships.values()].find(item=>item.traineeId===user.id&&item.status==='ACTIVE'),trainerUser=relationship&&users.get(relationship.trainerId);return{kind:'TRAINEE',todayWorkout:active[0]?{id:active[0].id,name:active[0].templateSnapshot.name,exerciseCount:active[0].templateSnapshot.exercises.length,status:active[0].status}:null,currentStreak:completed,weeklyCompletion:active.length?Math.round(completed/active.length*100):0,completedCount:completed,assignedCount:active.length,trainerName:trainerUser?.name||null}}
-// What an active coaching relationship actually grants, field by field. The
-// stored object is merged over the defaults so a relationship created before
-// this column existed still answers every flag.
-const RELATIONSHIP_PERMISSION_DEFAULTS={view_progress:true,view_nutrition:true,log_on_behalf:false};
-const RELATIONSHIP_PERMISSION_KEYS=Object.keys(RELATIONSHIP_PERMISSION_DEFAULTS);
-function relationshipPermissions(relationship){return {...RELATIONSHIP_PERMISSION_DEFAULTS,...(relationship&&relationship.permissions||{})}}
-function normalizeRelationshipPermissions(value){
-  if(value==null||typeof value!=='object'||Array.isArray(value))return null;
-  const normalized={};
-  for(const key of RELATIONSHIP_PERMISSION_KEYS)normalized[key]=key in value?Boolean(value[key]):RELATIONSHIP_PERMISSION_DEFAULTS[key];
-  return normalized;
-}
+async function traineeDashboard(user,timezone){const active=[...assignments.values()].filter(a=>a.traineeId===user.id&&a.status!=='ARCHIVED').sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))),completed=active.filter(a=>a.status==='COMPLETED').length,relationship=[...relationships.values()].find(item=>item.traineeId===user.id&&item.status==='ACTIVE'),trainerUser=relationship&&users.get(relationship.trainerId);return{kind:'TRAINEE',todayWorkout:active[0]?{id:active[0].id,name:active[0].templateSnapshot.name,exerciseCount:active[0].templateSnapshot.exercises.length,status:active[0].status}:null,currentStreak:completed,weeklyCompletion:active.length?Math.round(completed/active.length*100):0,completedCount:completed,assignedCount:active.length,trainerName:trainerUser?.name||null}}
 // A trainee always reaches their own records. A trainer reaches them through an
 // active relationship AND the specific permission the action needs; passing no
 // capability means the relationship alone is enough, which is the case for a
@@ -384,12 +330,12 @@ async function authApi(req,res,url,session){
     if(!mutationAllowed(req,res,session))return true;if(!rateLimit(`register:${clientIp(req)}`,REGISTRATION_LIMIT,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many registration attempts.'}});return true}
     const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email),role=body.role;
     if(!validName(body.name)){json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2–80 characters.'}});return true}if(!validEmail(email)){json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});return true}if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}if(!['TRAINER','TRAINEE'].includes(role)){json(res,422,{error:{code:'ROLE_INVALID',message:'Choose trainer or trainee.'}});return true}if(body.privacyAccepted!==true||body.privacyNoticeVersion!==PRIVACY_NOTICE_VERSION){json(res,422,{error:{code:'PRIVACY_CONSENT_REQUIRED',message:'Review and accept the current Privacy Notice to create an account.'}});return true}if(usersByEmail.has(email)){json(res,409,{error:{code:'EMAIL_EXISTS',message:'An account already exists for this email.'}});return true}
-    const user=await createUser({name:body.name,email,password:body.password,role,privacyNoticeVersion:PRIVACY_NOTICE_VERSION});const next=rotateSession(res,session,user.id);const verification=await issueEmailVerification(user);json(res,201,{user:publicUser(user),csrfToken:next.csrf,privacyNoticeVersion:PRIVACY_NOTICE_VERSION,emailVerification:verification});return true;
+    const user=await createUser({name:body.name,email,password:body.password,role,privacyNoticeVersion:PRIVACY_NOTICE_VERSION});const next=await rotateSession(res,session,user.id);const verification=await issueEmailVerification(user);json(res,201,{user:publicUser(user),csrfToken:next.csrf,privacyNoticeVersion:PRIVACY_NOTICE_VERSION,emailVerification:verification});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/login'){
     if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);const bucket=`login:${clientIp(req)}:${email}`;
     if(!rateLimit(bucket,LOGIN_LIMIT,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many sign-in attempts. Try again later.'}});return true}const userId=usersByEmail.get(email),user=userId&&users.get(userId);const correct=user&&await verifyPassword(String(body.password||''),user.passwordHash);
-    if(!correct||user.status!=='ACTIVE'){await new Promise(resolve=>setTimeout(resolve,180));json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Email or password is incorrect.'}});return true}const next=rotateSession(res,session,user.id);json(res,200,{user:publicUser(user),csrfToken:next.csrf});return true;
+    if(!correct||user.status!=='ACTIVE'){await new Promise(resolve=>setTimeout(resolve,180));json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Email or password is incorrect.'}});return true}const next=await rotateSession(res,session,user.id);json(res,200,{user:publicUser(user),csrfToken:next.csrf});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/forgot-password'){
     if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);
@@ -402,7 +348,7 @@ async function authApi(req,res,url,session){
     if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}
     const rawToken=typeof body.token==='string'?body.token:'';const tokenHash=Buffer.from(await scrypt(rawToken,'ptrainer-reset-v1',32)).toString('base64url');let reset=passwordResets.get(tokenHash);if(!reset){const stored=await query('SELECT user_id,expires_at,used_at FROM password_reset_tokens WHERE token_hash=$1',[tokenHash]);if(stored.rowCount)reset={userId:stored.rows[0].user_id,expiresAt:new Date(stored.rows[0].expires_at).getTime(),used:Boolean(stored.rows[0].used_at)}}
     if(!reset||reset.used||reset.expiresAt<Date.now()){json(res,400,{error:{code:'RESET_TOKEN_INVALID',message:'Reset link is invalid or expired.'}});return true}
-    const user=users.get(reset.userId);reset.used=true;user.passwordHash=await hashPassword(body.password);await query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[user.passwordHash,user.id]);await query('UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1',[tokenHash]);for(const [sid,item]of sessions)if(item.userId===user.id)sessions.delete(sid);const next=rotateSession(res,session,null);json(res,200,{message:'Password updated. Sign in with your new password.',csrfToken:next.csrf});return true;
+    const user=users.get(reset.userId);reset.used=true;user.passwordHash=await hashPassword(body.password);await query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[user.passwordHash,user.id]);await query('UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1',[tokenHash]);await destroyUserSessions(user.id);const next=await rotateSession(res,session,null);json(res,200,{message:'Password updated. Sign in with your new password.',csrfToken:next.csrf});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/verify-email'){
     if(!mutationAllowed(req,res,session))return true;
@@ -425,12 +371,12 @@ async function authApi(req,res,url,session){
     await audit(target.id,'EMAIL_VERIFIED','user',target.id);
     json(res,200,{user:publicUser(target)});return true;
   }
-  if(req.method==='POST'&&url.pathname==='/api/auth/logout'){if(!mutationAllowed(req,res,session))return true;sessions.delete(session.sid);setSessionCookie(res,'',0);json(res,200,{ok:true});return true}
+  if(req.method==='POST'&&url.pathname==='/api/auth/logout'){if(!mutationAllowed(req,res,session))return true;await destroySession(session.sid);setSessionCookie(res,'',0);json(res,200,{ok:true});return true}
   return false;
 }
 
 async function api(req,res,url){
-  let session=getSession(req,res);
+  let session=await getSession(req,res);
   if(req.method==='GET'&&url.pathname==='/api/session'){const user=sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION})}
   if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
   if(await authApi(req,res,url,session))return;
@@ -447,6 +393,17 @@ async function api(req,res,url){
   const foodProductMatch=url.pathname.match(/^\/api\/food-products\/([^/]{1,32})$/);
   if(req.method==='GET'&&foodProductMatch){
     const barcode=normalizeBarcode(decodeURIComponent(foodProductMatch[1]));if(!barcode)return json(res,422,{error:{code:'BARCODE_INVALID',message:'Enter an 8–14 digit UPC, EAN, or GTIN barcode.'}});if(!rateLimit(`food-lookup:${user.id}`,30,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many barcode lookups. Try again in a minute.'}});const cached=foodProductCache.get(barcode);if(cached&&cached.expiresAt>Date.now())return json(res,200,{product:cached.product,cached:true});try{const product=await lookupFoodProduct(barcode,{userAgent:FOOD_API_USER_AGENT});if(!product)return json(res,404,{error:{code:'FOOD_NOT_FOUND',message:'This barcode is not in Open Food Facts. You can still enter the label manually.'}});foodProductCache.set(barcode,{product,expiresAt:Date.now()+6*60*60*1000});return json(res,200,{product,cached:false})}catch(error){if(error.name==='AbortError')return json(res,504,{error:{code:'FOOD_LOOKUP_TIMEOUT',message:'The food lookup timed out. Enter the label manually or try again.'}});log('warn','food_lookup_failed',{barcode,errorCode:error.code||'UNKNOWN'});return json(res,502,{error:{code:'FOOD_LOOKUP_UNAVAILABLE',message:'The food database is temporarily unavailable. Enter the label manually or try again.'}})}
+  }
+  if(req.method==='POST'&&url.pathname==='/api/auth/logout-others'){
+    if(!mutationAllowed(req,res,session))return;
+    const endedCount=await destroyUserSessions(user.id,session.sid);
+    await audit(user.id,'OTHER_SESSIONS_ENDED','user',user.id,{endedCount});
+    return json(res,200,{endedCount});
+  }
+  if(req.method==='GET'&&url.pathname==='/api/me/sessions'){
+    const rows=await query('SELECT sid,created_at,last_seen FROM sessions WHERE user_id=$1 ORDER BY last_seen DESC LIMIT 50',[user.id]);
+    // The identifier is the credential, so only a short fingerprint is returned.
+    return json(res,200,{sessions:rows.rows.map(row=>({id:tokenDigest(row.sid).slice(0,12),current:row.sid===session.sid,createdAt:row.created_at,lastSeen:row.last_seen}))});
   }
   if(req.method==='POST'&&url.pathname==='/api/me/resend-verification'){
     if(!mutationAllowed(req,res,session))return;
@@ -496,9 +453,13 @@ async function api(req,res,url){
       await tx('DELETE FROM user_profiles WHERE user_id=$1',[user.id]);
       await tx("UPDATE trainer_trainee_relationships SET status='REVOKED',updated_at=now() WHERE (trainer_id=$1 OR trainee_id=$1) AND status<>'REVOKED'",[user.id]);
     });
-    for(const key of [...relationships.keys()])if(key.startsWith(`${user.id}:`)||key.endsWith(`:${user.id}`))relationships.get(key).status='REVOKED';usersByEmail.delete(user.email);user.email=anonymousEmail;user.name='Deleted user';user.status='DELETED';for(const [sid,item]of sessions)if(item.userId===user.id)sessions.delete(sid);setSessionCookie(res,'',0);return json(res,200,{deleted:true,purged});
+    for(const key of [...relationships.keys()])if(key.startsWith(`${user.id}:`)||key.endsWith(`:${user.id}`))relationships.get(key).status='REVOKED';usersByEmail.delete(user.email);user.email=anonymousEmail;user.name='Deleted user';user.status='DELETED';await destroyUserSessions(user.id);setSessionCookie(res,'',0);return json(res,200,{deleted:true,purged});
   }
-  if(req.method==='GET'&&url.pathname==='/api/dashboard')return json(res,200,await (user.role==='TRAINER'?trainerDashboard(user):traineeDashboard(user)));
+  if(req.method==='GET'&&url.pathname==='/api/dashboard'){
+    const zone=await query('SELECT timezone FROM user_profiles WHERE user_id=$1',[user.id]);
+    const timezone=zone.rows[0]?.timezone||'UTC';
+    return json(res,200,{...(await (user.role==='TRAINER'?trainerDashboard(user,timezone):traineeDashboard(user,timezone))),today:todayIn(timezone),timezone});
+  }
   if(url.pathname==='/api/exercises'&&['GET','POST'].includes(req.method)){
     if(req.method==='POST'&&!mutationAllowed(req,res,session))return;
     if(!requireRole(res,user,'TRAINER'))return;
@@ -632,7 +593,15 @@ async function api(req,res,url){
   if(req.method==='POST'&&url.pathname==='/api/assigned-workouts/custom'){
     if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body),relationship=relationships.get(`${user.id}:${body.traineeId}`);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'ASSIGNMENT_FORBIDDEN',message:'An active coaching relationship is required.'}});const createdAt=new Date().toISOString(),template={id:id('tpl'),trainerId:user.id,name:workout.name,description:workout.description,exercises:workout.exercises,version:1,createdAt},assignment={id:id('assigned'),templateId:null,templateSnapshot:null,trainerId:user.id,traineeId:body.traineeId,dueDate:workout.dueDate,status:'ASSIGNED',createdAt};assignment.templateId=template.id;assignment.templateSnapshot=structuredClone(template);await transaction(async tx=>{await tx('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[template.id,template.trainerId,template.name,template.description,template.version,JSON.stringify(template.exercises),template.createdAt]);await tx('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[assignment.id,assignment.templateId,assignment.trainerId,assignment.traineeId,JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.status,assignment.createdAt]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_ASSIGNED',$3,$4)",[id('notification'),assignment.traineeId,'New workout assigned',`${assignment.templateSnapshot.name}${assignment.dueDate?` · ${assignment.dueDate}`:''}`])});workoutTemplates.set(template.id,template);assignments.set(assignment.id,assignment);await audit(user.id,'WORKOUT_ASSIGNED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,custom:true});return json(res,201,{assignment});
   }
-  if(req.method==='GET'&&url.pathname==='/api/assigned-workouts'){const visible=[...assignments.values()].filter(a=>user.role==='TRAINER'?a.trainerId===user.id:a.traineeId===user.id);return json(res,200,{assignments:visible})}
+  if(req.method==='GET'&&url.pathname==='/api/assigned-workouts'){
+    const limit=pageLimit(url,50,200),cursor=decodeCursor(url.searchParams.get('cursor'),2);
+    // Column name comes from the role, never from the request.
+    const ownerColumn=user.role==='TRAINER'?'trainer_id':'trainee_id';
+    const requestedTrainee=user.role==='TRAINER'?(url.searchParams.get('traineeId')||null):null;
+    const result=await query(`SELECT id,template_id,trainer_id,trainee_id,template_snapshot,due_date,start_date,end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL AND ${ownerColumn}=$1 AND ($2::text IS NULL OR trainee_id=$2) AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4)) ORDER BY created_at DESC, id DESC LIMIT $5`,[user.id,requestedTrainee,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]);
+    const visible=result.rows.map(row=>({id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at}));
+    return json(res,200,{assignments:visible,nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])});
+  }
   const assignmentEdit=url.pathname.match(/^\/api\/assigned-workouts\/([A-Za-z0-9_-]{1,64})$/);
   if(req.method==='PATCH'&&assignmentEdit){
     if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const assignment=assignments.get(assignmentEdit[1]);if(!assignment||assignment.trainerId!==user.id)return json(res,404,{error:{code:'WORKOUT_NOT_FOUND',message:'Assigned workout not found.'}});const relationship=relationships.get(`${user.id}:${assignment.traineeId}`);if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'WORKOUT_EDIT_FORBIDDEN',message:'An active coaching relationship is required.'}});if(assignment.status!=='ASSIGNED')return json(res,409,{error:{code:'WORKOUT_LOCKED',message:'A workout cannot be edited after logging has started.'}});const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});assignment.templateSnapshot={...assignment.templateSnapshot,name:workout.name,description:workout.description,exercises:workout.exercises,version:Number(assignment.templateSnapshot.version||1)+1};assignment.dueDate=workout.dueDate;await transaction(async tx=>{await tx('UPDATE assigned_workouts SET template_snapshot=$1,due_date=$2 WHERE id=$3 AND trainer_id=$4 AND status=\'ASSIGNED\'',[JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.id,user.id]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_UPDATED',$3,$4)",[id('notification'),assignment.traineeId,'Workout updated',assignment.templateSnapshot.name])});await audit(user.id,'ASSIGNED_WORKOUT_UPDATED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,version:assignment.templateSnapshot.version});return json(res,200,{assignment});
@@ -696,6 +665,7 @@ async function api(req,res,url){
       const storedLog=await query('SELECT id,assigned_workout_id,completed_count,created_at FROM workout_logs WHERE author_id=$1 AND idempotency_key=$2',[user.id,key]);
       if(storedLog.rowCount){const row=storedLog.rows[0];return json(res,200,{log:{id:row.id,assignedWorkoutId:row.assigned_workout_id,completedCount:row.completed_count,savedAt:row.created_at}})}
     }
+    if(!rateLimit(`workout-log:${user.id}`,120,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many workout saves. Slow down.'}});
     const body=await readJson(req,res);if(!body)return;
     const sets=normalizeSetRows(body.sets,exerciseCount);
     if(sets===null)return json(res,422,{error:{code:'SET_LOG_INVALID',message:'A set is missing its unit or falls outside the allowed range.'}});
@@ -739,14 +709,15 @@ async function api(req,res,url){
     const traineeId=accessibleTrainee(user,url.searchParams.get('traineeId'),'view_progress');
     if(!traineeId)return json(res,403,{error:{code:'PROGRESS_FORBIDDEN',message:'Progress access is not allowed.'}});
     const metric=(url.searchParams.get('metric')||'weight').slice(0,50);
-    const result=await query('SELECT id,metric_type,value::float,unit,value_normalized::float,normalized_unit,measured_at,note,author_id FROM progress_entries WHERE trainee_id=$1 AND metric_type=$2 AND deleted_at IS NULL ORDER BY measured_at ASC LIMIT 100',[traineeId,metric]);
+    const limit=pageLimit(url,100,500),cursor=decodeCursor(url.searchParams.get('cursor'),2);
+    const result=await query('SELECT id,metric_type,value::float,unit,value_normalized::float,normalized_unit,measured_at,note,author_id FROM progress_entries WHERE trainee_id=$1 AND metric_type=$2 AND deleted_at IS NULL AND ($3::timestamptz IS NULL OR (measured_at, id) > ($3, $4)) ORDER BY measured_at ASC, id ASC LIMIT $5',[traineeId,metric,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]);
     // Charts read one comparable series while each row keeps the value and unit
     // the person actually entered.
     const preference=await query('SELECT preferred_units FROM user_profiles WHERE user_id=$1',[user.id]);
     const definition=progressMetrics.get(metric)||null;
     const displayUnit=definition?DISPLAY_UNIT[preference.rows[0]?.preferred_units||'METRIC'][definition.dimension]:null;
     const entries=result.rows.map(row=>({...row,can_manage:row.author_id===user.id,display_value:displayUnit?convertUnit(row.value_normalized,row.normalized_unit,displayUnit):row.value,display_unit:displayUnit||row.unit}));
-    return json(res,200,{entries,metric:definition,displayUnit});
+    return json(res,200,{entries,metric:definition,displayUnit,nextCursor:nextCursorFor(result.rows,limit,row=>[row.measured_at,row.id])});
   }
   if(req.method==='POST'&&url.pathname==='/api/progress-entries'){
     if(!mutationAllowed(req,res,session))return;
@@ -754,7 +725,7 @@ async function api(req,res,url){
     const traineeId=accessibleTrainee(user,body.traineeId,'log_on_behalf');
     if(!traineeId)return json(res,403,{error:{code:'PROGRESS_FORBIDDEN',message:'Progress access is not allowed.'}});
     if(!rateLimit(`progress:${user.id}`,60,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many progress entries. Slow down.'}});
-    const entry=normalizeProgressEntry(body);
+    const entry=normalizeProgressEntry(body,progressMetrics);
     if(!entry)return json(res,422,{error:{code:'PROGRESS_INVALID',message:'Progress value, metric, date, or unit is invalid.'}});
     const entryId=id('progress');
     await query('INSERT INTO progress_entries(id,trainee_id,author_id,metric_type,value,unit,value_normalized,normalized_unit,measured_at,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',[entryId,traineeId,user.id,entry.metricType,entry.value,entry.unit,entry.normalizedValue,entry.normalizedUnit,entry.measuredAt,entry.note]);
@@ -777,17 +748,17 @@ async function api(req,res,url){
       await audit(user.id,'PROGRESS_ENTRY_DELETED','progress_entry',progressEntryMatch[1],{traineeId});
       return json(res,200,{deleted:true});
     }
-    const entry=normalizeProgressEntry(body);
+    const entry=normalizeProgressEntry(body,progressMetrics);
     if(!entry)return json(res,422,{error:{code:'PROGRESS_INVALID',message:'Progress value, metric, date, or unit is invalid.'}});
     const updated=await query('UPDATE progress_entries SET metric_type=$1,value=$2,unit=$3,value_normalized=$4,normalized_unit=$5,measured_at=$6,note=$7,updated_at=now() WHERE id=$8 RETURNING id,metric_type,value::float,unit,value_normalized::float,normalized_unit,measured_at,note,author_id',[entry.metricType,entry.value,entry.unit,entry.normalizedValue,entry.normalizedUnit,entry.measuredAt,entry.note,progressEntryMatch[1]]);
     await audit(user.id,'PROGRESS_ENTRY_UPDATED','progress_entry',progressEntryMatch[1],{traineeId});
     return json(res,200,{entry:{...updated.rows[0],can_manage:true}});
   }
   if(req.method==='GET'&&url.pathname==='/api/nutrition-entries'){
-    const traineeId=accessibleTrainee(user,url.searchParams.get('traineeId'),'view_nutrition');if(!traineeId)return json(res,403,{error:{code:'NUTRITION_FORBIDDEN',message:'Nutrition access is not allowed.'}});const selectedDate=url.searchParams.get('date');if(selectedDate&&!validDateOnly(selectedDate))return json(res,422,{error:{code:'NUTRITION_DATE_INVALID',message:'Choose a valid journal date.'}});const params=selectedDate?[traineeId,selectedDate]:[traineeId],dateClause=selectedDate?' AND n.entry_date=$2':'';const [result,target]=await Promise.all([query(`SELECT n.id,n.author_id,u.name AS author_name,n.entry_date,n.entry_type,n.description,n.calories,n.protein_g::float,n.carbs_g::float,n.fat_g::float,n.water_ml,n.food_barcode,n.food_name,n.food_brand,n.food_quantity_g::float,n.data_source,n.created_at,n.updated_at FROM nutrition_entries n JOIN users u ON u.id=n.author_id WHERE n.trainee_id=$1${dateClause} ORDER BY n.entry_date DESC,n.created_at DESC LIMIT 120`,params),query('SELECT calories,protein_g::float,carbs_g::float,fat_g::float,water_ml,author_id,updated_at FROM nutrition_targets WHERE trainee_id=$1',[traineeId])]);const entries=result.rows.map(entry=>({...entry,can_manage:entry.author_id===user.id}));return json(res,200,{entries,target:target.rows[0]||null})
+    const traineeId=accessibleTrainee(user,url.searchParams.get('traineeId'),'view_nutrition');if(!traineeId)return json(res,403,{error:{code:'NUTRITION_FORBIDDEN',message:'Nutrition access is not allowed.'}});const selectedDate=url.searchParams.get('date');if(selectedDate&&!validDateOnly(selectedDate))return json(res,422,{error:{code:'NUTRITION_DATE_INVALID',message:'Choose a valid journal date.'}});const limit=pageLimit(url,120,500),cursor=decodeCursor(url.searchParams.get('cursor'),3);const params=[traineeId,selectedDate||null,cursor?cursor[0]:null,cursor?cursor[1]:null,cursor?cursor[2]:null,limit];const [result,target]=await Promise.all([query(`SELECT n.id,n.author_id,u.name AS author_name,n.entry_date,n.entry_type,n.description,n.calories,n.protein_g::float,n.carbs_g::float,n.fat_g::float,n.water_ml,n.food_barcode,n.food_name,n.food_brand,n.food_quantity_g::float,n.data_source,n.created_at,n.updated_at FROM nutrition_entries n JOIN users u ON u.id=n.author_id WHERE n.trainee_id=$1 AND ($2::date IS NULL OR n.entry_date=$2) AND ($3::date IS NULL OR (n.entry_date, n.created_at, n.id) < ($3, $4, $5)) ORDER BY n.entry_date DESC,n.created_at DESC,n.id DESC LIMIT $6`,params),query('SELECT calories,protein_g::float,carbs_g::float,fat_g::float,water_ml,author_id,updated_at FROM nutrition_targets WHERE trainee_id=$1',[traineeId])]);const entries=result.rows.map(entry=>({...entry,can_manage:entry.author_id===user.id}));return json(res,200,{entries,target:target.rows[0]||null,nextCursor:nextCursorFor(result.rows,limit,row=>[row.entry_date,row.created_at,row.id])})
   }
   if(req.method==='POST'&&url.pathname==='/api/nutrition-entries'){
-    if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;const traineeId=accessibleTrainee(user,body.traineeId,'log_on_behalf');if(!traineeId)return json(res,403,{error:{code:'NUTRITION_FORBIDDEN',message:'Nutrition access is not allowed.'}});const normalized=normalizeNutritionEntry(body);if(!normalized)return json(res,422,{error:{code:'NUTRITION_INVALID',message:'Add a valid date, meal type, description, or nutrition value.'}});const entryId=id('nutrition');await query('INSERT INTO nutrition_entries(id,trainee_id,author_id,entry_date,entry_type,description,calories,protein_g,carbs_g,fat_g,water_ml,food_barcode,food_name,food_brand,food_quantity_g,data_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)',[entryId,traineeId,user.id,normalized.entryDate,normalized.entryType,normalized.description,normalized.calories,normalized.proteinG,normalized.carbsG,normalized.fatG,normalized.waterMl,normalized.foodBarcode,normalized.foodName,normalized.foodBrand,normalized.foodQuantityG,normalized.dataSource]);await audit(user.id,'NUTRITION_ENTRY_CREATED','nutrition_entry',entryId,{traineeId,foodBarcode:normalized.foodBarcode});return json(res,201,{entry:{id:entryId,...normalized,authorId:user.id,canManage:true}})
+    if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;const traineeId=accessibleTrainee(user,body.traineeId,'log_on_behalf');if(!traineeId)return json(res,403,{error:{code:'NUTRITION_FORBIDDEN',message:'Nutrition access is not allowed.'}});if(!rateLimit(`nutrition:${user.id}`,120,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many nutrition entries. Slow down.'}});const normalized=normalizeNutritionEntry(body);if(!normalized)return json(res,422,{error:{code:'NUTRITION_INVALID',message:'Add a valid date, meal type, description, or nutrition value.'}});const entryId=id('nutrition');await query('INSERT INTO nutrition_entries(id,trainee_id,author_id,entry_date,entry_type,description,calories,protein_g,carbs_g,fat_g,water_ml,food_barcode,food_name,food_brand,food_quantity_g,data_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)',[entryId,traineeId,user.id,normalized.entryDate,normalized.entryType,normalized.description,normalized.calories,normalized.proteinG,normalized.carbsG,normalized.fatG,normalized.waterMl,normalized.foodBarcode,normalized.foodName,normalized.foodBrand,normalized.foodQuantityG,normalized.dataSource]);await audit(user.id,'NUTRITION_ENTRY_CREATED','nutrition_entry',entryId,{traineeId,foodBarcode:normalized.foodBarcode});return json(res,201,{entry:{id:entryId,...normalized,authorId:user.id,canManage:true}})
   }
   const nutritionEntryMatch=url.pathname.match(/^\/api\/nutrition-entries\/([A-Za-z0-9_-]{1,64})$/);
   if(['PATCH','DELETE'].includes(req.method)&&nutritionEntryMatch){
@@ -796,9 +767,9 @@ async function api(req,res,url){
   if(req.method==='PATCH'&&url.pathname==='/api/nutrition-target'){
     if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;const traineeId=accessibleTrainee(user,body.traineeId);if(!traineeId)return json(res,403,{error:{code:'NUTRITION_FORBIDDEN',message:'Nutrition access is not allowed.'}});const values=nutritionValues(body);if(!values||Object.values(values).every(value=>value===null))return json(res,422,{error:{code:'NUTRITION_TARGET_INVALID',message:'Add at least one valid daily target.'}});const targetId=traineeId;const result=await query('INSERT INTO nutrition_targets(trainee_id,author_id,calories,protein_g,carbs_g,fat_g,water_ml) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(trainee_id) DO UPDATE SET author_id=$2,calories=$3,protein_g=$4,carbs_g=$5,fat_g=$6,water_ml=$7,updated_at=now() RETURNING calories,protein_g::float,carbs_g::float,fat_g::float,water_ml,author_id,updated_at',[targetId,user.id,values.calories,values.proteinG,values.carbsG,values.fatG,values.waterMl]);await audit(user.id,'NUTRITION_TARGET_UPDATED','nutrition_target',traineeId);return json(res,200,{target:result.rows[0]})
   }
-  if(req.method==='GET'&&url.pathname==='/api/notifications'){const result=await query('SELECT id,event_type,title,body,read_at,created_at FROM notifications WHERE recipient_id=$1 ORDER BY created_at DESC LIMIT 50',[user.id]);return json(res,200,{notifications:result.rows,unreadCount:result.rows.filter(item=>!item.read_at).length})}
+  if(req.method==='GET'&&url.pathname==='/api/notifications'){const limit=pageLimit(url,50,200),cursor=decodeCursor(url.searchParams.get('cursor'),2);const [result,unread]=await Promise.all([query('SELECT id,event_type,title,body,read_at,created_at FROM notifications WHERE recipient_id=$1 AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3)) ORDER BY created_at DESC, id DESC LIMIT $4',[user.id,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]),query('SELECT count(*)::int AS count FROM notifications WHERE recipient_id=$1 AND read_at IS NULL',[user.id])]);return json(res,200,{notifications:result.rows,unreadCount:Number(unread.rows[0].count),nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])})}
   const notificationRead=url.pathname.match(/^\/api\/notifications\/([A-Za-z0-9_-]{1,64})\/read$/);if(req.method==='POST'&&notificationRead){if(!mutationAllowed(req,res,session))return;const updated=await query('UPDATE notifications SET read_at=now() WHERE id=$1 AND recipient_id=$2 RETURNING id,read_at',[notificationRead[1],user.id]);if(!updated.rowCount)return json(res,404,{error:{code:'NOT_FOUND',message:'Notification not found.'}});return json(res,200,{notification:updated.rows[0]})}
-  if(req.method==='GET'&&url.pathname==='/api/messages'){const relationship=activeRelationship(user,url.searchParams.get('traineeId'));if(!relationship)return json(res,200,{messages:[],relationship:null});const result=await query('SELECT m.id,m.sender_id,u.name AS sender_name,m.body,m.read_at,m.created_at FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.relationship_trainer_id=$1 AND m.relationship_trainee_id=$2 ORDER BY m.created_at ASC LIMIT 200',[relationship.trainerId,relationship.traineeId]);return json(res,200,{messages:result.rows,relationship})}
+  if(req.method==='GET'&&url.pathname==='/api/messages'){const relationship=activeRelationship(user,url.searchParams.get('traineeId'));if(!relationship)return json(res,200,{messages:[],relationship:null});const limit=pageLimit(url,200,500),cursor=decodeCursor(url.searchParams.get('cursor'),2);const result=await query('SELECT m.id,m.sender_id,u.name AS sender_name,m.body,m.read_at,m.created_at FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.relationship_trainer_id=$1 AND m.relationship_trainee_id=$2 AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) ORDER BY m.created_at ASC, m.id ASC LIMIT $5',[relationship.trainerId,relationship.traineeId,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]);return json(res,200,{messages:result.rows,relationship,nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])})}
   if(req.method==='POST'&&url.pathname==='/api/messages'){if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;const relationship=activeRelationship(user,body.traineeId);if(!relationship)return json(res,403,{error:{code:'MESSAGE_FORBIDDEN',message:'An active coaching relationship is required.'}});const messageBody=String(body.body||'').trim();if(messageBody.length<1||messageBody.length>2000)return json(res,422,{error:{code:'MESSAGE_INVALID',message:'Message must be 1–2000 characters.'}});if(!rateLimit(`message:${user.id}`,30,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages. Slow down.'}});const message={id:id('message'),sender_id:user.id,sender_name:user.name,body:messageBody,created_at:new Date().toISOString(),read_at:null};await query('INSERT INTO messages(id,relationship_trainer_id,relationship_trainee_id,sender_id,body,created_at) VALUES($1,$2,$3,$4,$5,$6)',[message.id,relationship.trainerId,relationship.traineeId,user.id,message.body,message.created_at]);const recipientId=user.id===relationship.trainerId?relationship.traineeId:relationship.trainerId;await query("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'NEW_MESSAGE',$3,$4)",[id('notification'),recipientId,`New message from ${user.name}`,message.body.slice(0,140)]);return json(res,201,{message})}
   if(req.method==='GET'&&url.pathname==='/api/subscription'){const result=await query('SELECT id,plan_code,status,provider,current_period_end FROM subscriptions WHERE user_id=$1',[user.id]);return json(res,200,{subscription:result.rows[0]||{plan_code:'STARTER',status:'TRIALING',provider:'TEST'}})}
   if(req.method==='POST'&&url.pathname==='/api/billing/test-checkout'){if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const plan=String(body.planCode||'');if(!['PRO','TEAM'].includes(plan))return json(res,422,{error:{code:'PLAN_INVALID',message:'Choose a valid paid plan.'}});const subscription={id:id('subscription'),plan_code:plan,status:'ACTIVE',provider:'TEST',current_period_end:new Date(Date.now()+30*86400000).toISOString()};await query("INSERT INTO subscriptions(id,user_id,plan_code,status,provider,current_period_end) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id) DO UPDATE SET plan_code=$3,status=$4,provider=$5,current_period_end=$6,updated_at=now()",[subscription.id,user.id,subscription.plan_code,subscription.status,subscription.provider,subscription.current_period_end]);return json(res,201,{subscription,mode:'TEST',message:'No payment was charged.'})}
@@ -886,5 +857,10 @@ async function serveStatic(req,res,url){const requested=url.pathname==='/'?'inde
 const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}const url=new URL(req.url,APP_ORIGIN);if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
 server.listen(PORT,HOST,()=>log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode()}));
 const stopRetentionSweeps=startRetentionSweeps(query,log);
-let shuttingDown=false;async function shutdown(signal){if(shuttingDown)return;shuttingDown=true;log('info','server_shutdown_started',{signal});stopRetentionSweeps();server.close(async()=>{await closeDatabase();log('info','server_shutdown_complete');process.exit(0)});setTimeout(()=>process.exit(1),10000).unref()}
+// The bounded caches evict on access and when they hit their cap. This keeps a
+// quiet process from holding entries nobody will ask for again.
+const boundedCaches=[sessions,workoutSaves,rateBuckets,passwordResets,foodProductCache,foodSearchCache];
+const cachePruneTimer=setInterval(()=>{for(const cache of boundedCaches)cache.prune()},15*60*1000);
+cachePruneTimer.unref();
+let shuttingDown=false;async function shutdown(signal){if(shuttingDown)return;shuttingDown=true;log('info','server_shutdown_started',{signal});stopRetentionSweeps();clearInterval(cachePruneTimer);server.close(async()=>{await closeDatabase();log('info','server_shutdown_complete');process.exit(0)});setTimeout(()=>process.exit(1),10000).unref()}
 process.on('SIGINT',()=>shutdown('SIGINT'));process.on('SIGTERM',()=>shutdown('SIGTERM'));

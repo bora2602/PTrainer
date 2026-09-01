@@ -34,7 +34,8 @@ const PROTECTED = [
   // Development-only hooks, listed here so the probe proves they still refuse
   // an unauthenticated caller rather than being trusted to be harmless.
   ['POST', '/api/test/expire-invitation'], ['POST', '/api/test/retention-sweep'],
-  ['GET', '/api/test/health-data-count']
+  ['GET', '/api/test/health-data-count'],
+  ['POST', '/api/auth/logout-others'], ['GET', '/api/me/sessions']
 ];
 
 const anon = await fetch(`${base}/api/session`);

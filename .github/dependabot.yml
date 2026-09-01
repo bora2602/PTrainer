@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # The app has two runtime dependencies, so the volume here is low and the
+  # signal is high: a security update to pg or PGlite should not wait for
+  # somebody to notice it.
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      all-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: docker
+    directory: /app
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

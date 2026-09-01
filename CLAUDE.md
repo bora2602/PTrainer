@@ -1,6 +1,6 @@
 # CLAUDE.md — PTrainer
 
-This file orients Claude Code (or any engineer) working in this repository. Read this before writing code. It reflects the product plan in `Fitness_Coaching_Platform_Plan.docx` — treat that document as the source of truth for product rationale and this file as the source of truth for how to build it.
+This file orients Claude Code (or any engineer) working in this repository. Read this before writing code. It reflects the product plan in [`outputs/Fitness_Coaching_Platform_Planning_Document.docx`](outputs/Fitness_Coaching_Platform_Planning_Document.docx) — treat that document as the source of truth for product rationale and this file as the source of truth for how to build it.
 
 > **Working agreement, before anything else: never run `git commit` or `git push` without asking first and waiting for an explicit yes.** Staging changes and proposing a commit message is welcome; writing to history is the maintainer's call. Full rule in [section 6a](#6a-working-agreement--version-control).
 
@@ -12,44 +12,104 @@ MVP roles: `trainer`, `trainee`. `admin` is a future role — design permission 
 
 ## 2. Tech stack
 
+This section describes what the repository actually contains. It diverges from
+the plan document's recommendation (Spring Boot + SvelteKit/React), and that was
+a deliberate call for a pilot that has to stay small and deployable from one
+machine — not drift. The plan's *requirements* still bind; only the technology
+choice differs.
+
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | React (or SvelteKit) + responsive CSS | Mobile-first; workout logger must work one-handed on a phone |
-| Backend | Spring Boot REST API | Modular monolith — see §3 |
-| Database | PostgreSQL (SQLite only for local prototyping) | UUID primary keys for anything exposed via API |
-| Auth | Session or short-lived JWT + refresh-token rotation | Never roll custom crypto; use a vetted library (Spring Security) |
-| File storage | Object storage (S3-compatible) | No binary blobs in Postgres rows |
-| Charts | Any frontend charting lib (Recharts, Chart.js) | Weight, completion %, nutrition trends |
-| Deploy | Docker containers, managed Postgres, HTTPS everywhere, env-based config | No secrets in source control — see §7 |
+| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/*.css`. Mobile-first; the workout logger must work one-handed on a phone. |
+| Backend | Node 24 with `node:http` — no web framework | `app/server.mjs`. Modular boundaries are described in §3. |
+| Database | PostgreSQL 16 in production; PGlite for local development | Same SQL either way. Numbered migrations in `app/migrations/`, applied at startup. |
+| Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. |
+| Mail | Pluggable transport (`app/email.mjs`) | `log` for development, `http` for a provider. Production refuses to start on `log`. |
+| File storage | None yet | Deferred until progress photos or exercise media are in scope — see `docs/architecture-decisions.md`. |
+| Charts | Hand-rolled CSS bars, no charting library | Keeps the dependency count at two. |
+| Deploy | Docker, Compose, optional Caddy edge, Cloudflare tunnel | Env-based config; no secrets in source control (§7). |
 
-Do not introduce a second backend language/framework or a second frontend framework without updating this file — consistency here is a deliberate scope-control decision, not an oversight.
+**Two runtime dependencies: `pg` and `@electric-sql/pglite`.** That is a feature.
+Adding a third needs a reason that outweighs the supply-chain and maintenance
+cost. Do not introduce a frontend framework, a build step, or a second backend
+language without updating this file first.
 
 ## 3. Architecture
 
-Single modular-monolith backend, split into logical modules with clear boundaries (separate packages, not separate services, for MVP):
+One process, organised by module boundary. The intended modules are `identity`,
+`profiles`, `relationships`, `exercises`, `workouts`, `logging`, `progress`,
+`notifications`, and `audit`.
 
-- `identity` — accounts, auth, sessions
-- `profiles` — trainer/trainee profile data
-- `relationships` — trainer-trainee invitations, connection status
-- `exercises` — exercise library
-- `workouts` — templates, assignment, versioning
-- `logging` — workout completion / set logs
-- `progress` — weight, body metrics, nutrition
-- `notifications` — optional for MVP, stub the interface now
-- `audit` — audit event capture, used by every module that mutates sensitive data
+**Current reality, stated plainly:** most of that lives in one large
+`app/server.mjs`. Pure input validation, normalization and unit conversion have
+been extracted into `app/validation.mjs` (which is why they can be unit tested
+without a server), and `email.mjs`, `retention.mjs`, `bounded-map.mjs`,
+`food-lookup.mjs` and `exercise-catalog.mjs` are separate. The routing and
+persistence for each domain is not yet split.
 
-Domain logic lives in services, not controllers. Controllers only: parse request → call service → map response → set status code.
+The target stands, and the way to reach it is to extract a module when you next
+have reason to touch that domain, rather than in one sweeping refactor.
 
-## 4. Data model (see plan §8 for full field lists)
+Rules that apply regardless of how the code is arranged:
 
-Core tables: `users`, `trainer_profiles`, `trainee_profiles`, `trainer_trainee_relationships`, `exercises`, `workout_templates`, `workout_template_exercises`, `assigned_workouts`, `workout_logs`, `set_logs`, `progress_metrics`, `progress_entries`, `nutrition_entries`, `trainer_notes`, `notifications`, `audit_events`.
+- **Domain decisions belong in functions, not inline in a route handler.** A
+  route should read as: check access → validate → call the operation → map the
+  response.
+- **Authorization is a domain rule.** `accessibleTrainee()` and `logAccess()` are
+  the choke points; new health-data routes go through them rather than
+  reimplementing the check.
+- Anything pure — validation, normalization, conversion — goes in
+  `validation.mjs` so it can be tested directly.
+
+## 4. Data model
+
+Tables: `users`, `sessions`, `user_profiles`, `trainer_trainee_relationships`,
+`invitations`, `exercises`, `workout_templates`, `assigned_workouts`,
+`workout_logs`, `set_logs`, `progress_metrics`, `progress_entries`,
+`nutrition_entries`, `nutrition_targets`, `trainer_notes`, `messages`,
+`notifications`, `audit_events`, `privacy_consents`, `password_reset_tokens`,
+`email_verification_tokens`, `subscriptions`, `schema_migrations`.
+
+Two differences from the plan's §8 list, both intentional: `trainer_profiles`
+and `trainee_profiles` are one `user_profiles` table, because the role-specific
+fields were few enough that two tables bought nothing; and
+`workout_template_exercises` is a JSONB array on the template rather than a
+child table, because a template's exercises are only ever read and written as a
+whole.
 
 Rules that apply to every table:
-- UUID (not sequential int) primary key for any record referenced by an external API.
-- `created_at`, `updated_at` on every table; `deleted_at` (soft delete) on any table needed for audit or historical workout accuracy — specifically `workout_templates`, `assigned_workouts`, `workout_logs`, `exercises`.
-- Store the unit alongside every numeric measurement (`unit` column) — never assume a global unit system. Preserve the trainee's original input unit even if you also store a normalized value for charting.
-- Database-level constraints for: nonnegative numeric values, valid foreign keys, and **at most one active relationship** between a given trainer/trainee pair (unique partial index on status = 'active').
-- `workout_templates` changes must not mutate historical `assigned_workouts` — assign by snapshot or immutable version reference, never by live foreign key to the mutable template.
+
+- **Non-sequential public identifiers.** Text ids of the form `prefix_<20 hex>`
+  (`usr_`, `tpl_`, `assigned_`). Not UUIDs, but they satisfy the requirement the
+  plan actually states — "UUIDs or comparable non-sequential public identifiers"
+  — and carry their type, which helps when reading logs.
+- `created_at` on every table that records an event, and `updated_at` on every
+  table whose rows are edited in place. Several tables deliberately have neither:
+  `audit_events` is append-only by design — an audit row that can be updated is a
+  defect, not a feature — while `sessions`, `notifications` and
+  `privacy_consents` carry a purpose-specific timestamp (`last_seen`, `read_at`,
+  `withdrawn_at`) that already answers when they last changed. Known gap:
+  `invitations` changes status without recording when.
+- `deleted_at` wherever history or audit needs the row to survive:
+  `workout_templates`, `assigned_workouts`, `workout_logs`, `exercises`,
+  `progress_entries`, `trainer_notes`.
+- **Store the unit alongside every measurement, and never overwrite what the
+  person entered.** `progress_entries` keeps `value`/`unit` exactly as typed and
+  derives `value_normalized`/`normalized_unit` for charting. `set_logs` requires
+  a unit whenever a load or distance is present — a database `CHECK`, not just a
+  validator.
+- Database-level constraints for nonnegative values, valid foreign keys, and
+  relationship uniqueness. Note the shipped index is
+  `one_active_trainer_per_trainee`: **one active trainer per trainee overall**,
+  which is stricter than "one per pair" and encodes the MVP's single-trainer
+  assumption. Revisit it if open decision #3 (multi-trainer) is answered yes.
+- **A relationship carries permissions**, not just a status. `view_progress` and
+  `view_nutrition` default on, `log_on_behalf` defaults off, and only the trainee
+  may change them.
+- `workout_templates` changes must not mutate historical `assigned_workouts`.
+  Each assignment holds its own snapshot; a recurring program is expanded into
+  dated occurrences at assign time, sharing a `series_id`.
+
 
 ## 5. API conventions
 
@@ -59,7 +119,7 @@ Base pattern from plan §9 (`/api/auth/*`, `/api/me`, `/api/relationships`, `/ap
 - Validate all request payloads server-side regardless of client-side validation.
 - Consistent error shape, e.g. `{ "error": { "code": "...", "message": "...", "field": "..." } }`. Never leak stack traces or internal identifiers in error bodies.
 - Idempotency: writing a workout log must be safe against duplicate submission (e.g. client-generated idempotency key, or unique constraint on `(assigned_workout_id, submitted_at_client)`).
-- Paginate any list endpoint that can grow unbounded (`workout-logs`, `progress-entries`, `nutrition-entries`) — cursor or offset pagination, document which.
+- Paginate any list endpoint that can grow unbounded. **The choice is keyset (cursor) pagination, not offset** — an offset re-scans what it skips and can repeat or drop rows at a page boundary when something is written between requests. Paginated today: `progress-entries`, `nutrition-entries`, `messages`, `notifications`, `assigned-workouts`. Full contract in [docs/api-reference.md](docs/api-reference.md).
 - Do not log request/response bodies containing passwords, tokens, or health-related field values.
 
 ## 6. Security & privacy (non-negotiable)
@@ -107,7 +167,7 @@ Any PR touching authorization logic must include a test that proves the *denied*
 7. Authorization test suite, audit events, backups, deploy pipeline
 8. Pilot, then reprioritize from feedback
 
-Do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
+Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. They are not to be extended, and the maintainer should either move them into scope in the plan document or record them as pilot-only extras — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
 
 ## 10. Definition of done for any MVP feature
 
