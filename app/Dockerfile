@@ -1,4 +1,4 @@
-FROM node:24-alpine
+FROM node:26-alpine
 WORKDIR /app
 RUN corepack enable && chown node:node /app
 USER node
