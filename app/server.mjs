@@ -190,7 +190,11 @@ async function relationshipsFor(user,status=null){
   return result.rows.map(relationshipRow);
 }
 async function activeTraineeIds(trainerId){
-  const result=await query("SELECT trainee_id FROM trainer_trainee_relationships WHERE trainer_id=$1 AND status='ACTIVE'",[trainerId]);
+  // Ordered because this list is what the roster and the client picker render.
+  // Unordered rows are whatever the database happens to hand back, so a client
+  // could move position between two requests for no reason the trainer can see.
+  // Oldest connection first, with the id breaking ties so the order is total.
+  const result=await query("SELECT trainee_id FROM trainer_trainee_relationships WHERE trainer_id=$1 AND status='ACTIVE' ORDER BY created_at, trainee_id",[trainerId]);
   return result.rows.map(row=>row.trainee_id);
 }
 
@@ -264,11 +268,32 @@ const storedTemplates=await query('SELECT id,trainer_id,name,description,version
 // local midnight, PGlite at UTC midnight - so a workout due on the 1st comes
 // back as the 31st under one of them. to_char settles it in the database.
 const storedAssignments=await query("SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL");for(const row of storedAssignments.rows)assignments.set(row.id,{id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at});
+// Every demo account in one list, because the two branches below both need it:
+// the one that creates them outside production, and the one that suspends them
+// in production. Two lists would drift, and the failure mode of drift is an
+// account left live with a password published in this repository.
+const DEMO_TRAINER={name:'Maya Adams',email:'trainer@ptrainer.local',password:'DemoTrainer1!',role:'TRAINER'};
+// The first entry is the account the demo sign-in button uses and the one the
+// rest of the seed hangs its progress, nutrition and workout history on. The
+// others exist so the roster, the client picker and the trainer dashboard are
+// exercised with more than one client - a list of one hides ordering and
+// selection bugs.
+const DEMO_TRAINEES=[
+  {name:'Jordan Lee',email:'trainee@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
+  {name:'Priya Raman',email:'priya@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
+  {name:'Marcus Okafor',email:'marcus@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
+  {name:'Sofia Duarte',email:'sofia@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
+  {name:'Ellis Nakamura',email:'ellis@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'}
+];
+const DEMO_ACCOUNTS=[DEMO_TRAINER,...DEMO_TRAINEES];
+
 if(!IS_PRODUCTION){
-  const trainer=await createUser({name:'Maya Adams',email:'trainer@ptrainer.local',password:'DemoTrainer1!',role:'TRAINER'}),trainee=await createUser({name:'Jordan Lee',email:'trainee@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'});
+  const trainer=await createUser(DEMO_TRAINER),demoClients=[];
+  for(const spec of DEMO_TRAINEES)demoClients.push(await createUser(spec));
+  const trainee=demoClients[0];
   // A previous production start suspends these; running outside production is
   // what re-enables them, so the two modes stay symmetric.
-  for(const demoUser of [trainer,trainee]){
+  for(const demoUser of [trainer,...demoClients]){
     if(demoUser.status!=='ACTIVE'){
       demoUser.status='ACTIVE';forgetUser(demoUser);
       await query("UPDATE users SET status='ACTIVE',updated_at=now() WHERE id=$1",[demoUser.id]);
@@ -279,7 +304,14 @@ if(!IS_PRODUCTION){
       await query('UPDATE users SET email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE id=$1',[demoUser.id]);
     }
   }
-  if(!await findRelationship(trainer.id,trainee.id)){const relationship={trainerId:trainer.id,traineeId:trainee.id,status:'ACTIVE',createdAt:new Date().toISOString()};await query('INSERT INTO trainer_trainee_relationships(trainer_id,trainee_id,status,created_at,updated_at) VALUES($1,$2,$3,$4,$4)',[relationship.trainerId,relationship.traineeId,relationship.status,relationship.createdAt]);}
+  // One active trainer per trainee is a database constraint, and these clients
+  // have no other coach, so each connection is safe to create and skipped once
+  // it exists rather than rewritten on every start.
+  for(const client of demoClients){
+    if(await findRelationship(trainer.id,client.id))continue;
+    await query("INSERT INTO trainer_trainee_relationships(trainer_id,trainee_id,status,created_at,updated_at) VALUES($1,$2,'ACTIVE',$3,$3)",[trainer.id,client.id,new Date().toISOString()]);
+    log('info','demo_client_connected',{email:client.email});
+  }
   let seedTemplate=[...workoutTemplates.values()].find(item=>item.trainerId===trainer.id&&item.name==='Upper Body Strength');if(!seedTemplate){seedTemplate={id:id('tpl'),trainerId:trainer.id,name:'Upper Body Strength',description:'A balanced upper-body strength session.',exercises:[{name:'Barbell bench press',sets:4,reps:8,restSeconds:90},{name:'Single-arm dumbbell row',sets:3,reps:10,restSeconds:75},{name:'Seated shoulder press',sets:3,reps:10,restSeconds:75},{name:'Cable triceps extension',sets:3,reps:12,restSeconds:60}],version:1,createdAt:new Date().toISOString()};await query('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[seedTemplate.id,seedTemplate.trainerId,seedTemplate.name,seedTemplate.description,seedTemplate.version,JSON.stringify(seedTemplate.exercises),seedTemplate.createdAt]);workoutTemplates.set(seedTemplate.id,seedTemplate)}
   let seedAssignment=assignments.get('assigned_demo_1');if(!seedAssignment){seedAssignment={id:'assigned_demo_1',templateId:seedTemplate.id,templateSnapshot:structuredClone(seedTemplate),trainerId:trainer.id,traineeId:trainee.id,dueDate:new Date().toISOString().slice(0,10),status:'ASSIGNED',createdAt:new Date().toISOString()};await query('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[seedAssignment.id,seedAssignment.templateId,seedAssignment.trainerId,seedAssignment.traineeId,JSON.stringify(seedAssignment.templateSnapshot),seedAssignment.dueDate,seedAssignment.status,seedAssignment.createdAt]);assignments.set(seedAssignment.id,seedAssignment)}
   const progressCount=await query('SELECT count(*)::int AS count FROM progress_entries WHERE trainee_id=$1',[trainee.id]);if(Number(progressCount.rows[0].count)===0){for(const [days,value]of [[56,82.4],[42,81.5],[28,80.8],[14,79.9],[0,79.2]])await query("INSERT INTO progress_entries(id,trainee_id,author_id,metric_type,value,unit,measured_at,note) VALUES($1,$2,$2,'weight',$3,'kg',$4,'')",[id('progress'),trainee.id,value,new Date(Date.now()-days*86400000).toISOString()])}
@@ -290,7 +322,7 @@ if(!IS_PRODUCTION){
   // accounts, and their passwords are published in this repository. Skipping the
   // seed is not enough - the existing rows have to stop being usable. Suspending
   // rather than deleting keeps any real data attached to them recoverable.
-  for(const email of ['trainer@ptrainer.local','trainee@ptrainer.local']){
+  for(const {email} of DEMO_ACCOUNTS){
     const demoUser=await findUserByEmail(email);
     if(demoUser&&demoUser.status==='ACTIVE'){
       demoUser.status='SUSPENDED';forgetUser(demoUser);
