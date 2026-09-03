@@ -42,6 +42,7 @@ import {
   normalizeProgressEntry,
   SCHEDULE_STEP_DAYS,
   normalizeSchedule,
+  normalizeDateWindow,
   RELATIONSHIP_PERMISSION_DEFAULTS,
   RELATIONSHIP_PERMISSION_KEYS,
   relationshipPermissions,
@@ -258,7 +259,11 @@ await seedExerciseLibrary();
 const storedMetrics=await query('SELECT key,label,dimension,canonical_unit FROM progress_metrics');for(const row of storedMetrics.rows)progressMetrics.set(row.key,{key:row.key,label:row.label,dimension:row.dimension,canonicalUnit:row.canonical_unit});
 
 const storedTemplates=await query('SELECT id,trainer_id,name,description,version,exercises,created_at FROM workout_templates WHERE archived_at IS NULL AND deleted_at IS NULL');for(const row of storedTemplates.rows)workoutTemplates.set(row.id,{id:row.id,trainerId:row.trainer_id,name:row.name,description:row.description,version:row.version,exercises:row.exercises,createdAt:row.created_at});
-const storedAssignments=await query('SELECT id,template_id,trainer_id,trainee_id,template_snapshot,due_date,start_date,end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL');for(const row of storedAssignments.rows)assignments.set(row.id,{id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at});
+// A DATE is read back as text on purpose. The two drivers this runs on
+// disagree about what a bare date means - node-postgres builds a JS Date at
+// local midnight, PGlite at UTC midnight - so a workout due on the 1st comes
+// back as the 31st under one of them. to_char settles it in the database.
+const storedAssignments=await query("SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL");for(const row of storedAssignments.rows)assignments.set(row.id,{id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at});
 if(!IS_PRODUCTION){
   const trainer=await createUser({name:'Maya Adams',email:'trainer@ptrainer.local',password:'DemoTrainer1!',role:'TRAINER'}),trainee=await createUser({name:'Jordan Lee',email:'trainee@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'});
   // A previous production start suspends these; running outside production is
@@ -681,7 +686,11 @@ async function api(req,res,url){
     // Column name comes from the role, never from the request.
     const ownerColumn=user.role==='TRAINER'?'trainer_id':'trainee_id';
     const requestedTrainee=user.role==='TRAINER'?(url.searchParams.get('traineeId')||null):null;
-    const result=await query(`SELECT id,template_id,trainer_id,trainee_id,template_snapshot,due_date,start_date,end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL AND ${ownerColumn}=$1 AND ($2::text IS NULL OR trainee_id=$2) AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4)) ORDER BY created_at DESC, id DESC LIMIT $5`,[user.id,requestedTrainee,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]);
+    // The calendar view asks for one month at a time. Unscheduled work has no
+    // square to sit in, so a window excludes it rather than pretending a date.
+    const dateWindow=normalizeDateWindow(url.searchParams.get('from'),url.searchParams.get('to'));
+    if(!dateWindow)return json(res,422,{error:{code:'DATE_WINDOW_INVALID',message:'Send from and to together as valid dates no more than a year apart.'}});
+    const result=await query(`SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL AND ${ownerColumn}=$1 AND ($2::text IS NULL OR trainee_id=$2) AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4)) AND ($6::date IS NULL OR (due_date IS NOT NULL AND due_date >= $6 AND due_date <= $7)) ORDER BY created_at DESC, id DESC LIMIT $5`,[user.id,requestedTrainee,cursor?cursor[0]:null,cursor?cursor[1]:null,limit,dateWindow.from,dateWindow.to]);
     const visible=result.rows.map(row=>({id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at}));
     return json(res,200,{assignments:visible,nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])});
   }

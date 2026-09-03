@@ -90,7 +90,20 @@ only) · `GET|POST /api/workout-templates` ·
 `startDate`/`endDate` expands into dated occurrences sharing a `seriesId`) ·
 `POST /api/assigned-workouts/custom` ·
 `PATCH /api/assigned-workouts/:id` (locked once logging starts) ·
-`GET|POST|PATCH /api/assigned-workouts/:id/logs`
+`GET /api/assigned-workouts` · `GET|POST|PATCH /api/assigned-workouts/:id/logs`
+
+**Listing assignments.** `GET /api/assigned-workouts` returns the caller's own
+rows: a trainee's are their own, a trainer's are the ones they assigned, and the
+column that decides which comes from the session role, never from the request. A
+trainer may narrow to one client with `?traineeId=`; the parameter is ignored for
+a trainee, and for a trainer it can only narrow what they could already see.
+
+`?from=&to=` restricts the result to workouts **due** inside an inclusive date
+window — this is what the calendar month view asks for. Both ends are required
+together, both are `YYYY-MM-DD`, and the window may not exceed 366 days;
+anything else is `422 DATE_WINDOW_INVALID` rather than a silently ignored
+filter. Work with no due date belongs to no window, so it appears only in an
+unwindowed request. Pagination is unchanged inside a window.
 
 **Workout logs.** `POST` finalizes and requires an `Idempotency-Key` header
 matching `[A-Za-z0-9_-]{16,100}`; replaying a key returns the original result

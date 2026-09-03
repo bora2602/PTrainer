@@ -79,6 +79,7 @@
         <button class="nav-item active" data-view="dashboard"><span class="icon">⌂</span><span>Overview</span></button>
         <button class="nav-item trainer-only" data-view="clients"><span class="icon">◎</span><span>Clients</span><span class="nav-count" id="navClientCount">0</span></button>
         <button class="nav-item" data-view="workouts"><span class="icon">◇</span><span>Workouts</span></button>
+        <button class="nav-item" data-view="calendar"><span class="icon">▤</span><span>Calendar</span></button>
         <button class="nav-item" data-view="progress"><span class="icon">↗</span><span>Progress</span></button>
         <button class="nav-item" data-view="nutrition"><span class="icon">◒</span><span>Nutrition</span></button>
         <button class="nav-item" data-view="messages"><span class="icon">✉</span><span>Messages</span></button>
@@ -176,6 +177,19 @@
         <div id="exerciseList" class="exercise-list"></div>
       </section>
 
+      <section class="page" id="calendar-view">
+        <div class="section-heading"><div><p class="eyebrow">SCHEDULED WORK</p><h1>Calendar</h1><p>Every assigned workout on the day it is due. Assigning and editing still happen in Workouts.</p></div><div class="calendar-controls"><button class="secondary-button" id="calendarPrev" aria-label="Previous month">‹</button><button class="secondary-button" id="calendarToday">Today</button><button class="secondary-button" id="calendarNext" aria-label="Next month">›</button></div></div>
+        <div class="calendar-layout">
+          <article class="panel calendar-panel">
+            <div class="panel-header"><div><h2 id="calendarMonthLabel">Calendar</h2><p id="calendarSummary" role="status" aria-live="polite">Loading scheduled workouts…</p></div></div>
+            <table class="calendar-grid"><caption class="sr-only">Assigned workouts by day. Choosing a day lists that day's workouts beside the grid.</caption><thead><tr id="calendarWeekdays"></tr></thead><tbody id="calendarBody"></tbody></table>
+          </article>
+          <article class="panel calendar-day-panel">
+            <div class="panel-header"><div><h2 id="calendarDayLabel">No day selected</h2><p>Workouts due on the chosen day</p></div></div>
+            <div id="calendarDayList" class="calendar-day-list"></div>
+          </article>
+        </div>
+      </section>
       <section class="page" id="clients-view">
         <div class="section-heading"><div><p class="eyebrow">COACHING ROSTER</p><h1>Clients</h1><p>Keep each coaching relationship, status, and next action visible.</p></div><button class="primary-button" data-open-invite>＋ Invite client</button></div>
         <div class="client-grid" id="clientGrid"></div>

@@ -18,7 +18,7 @@ new MutationObserver(records => {
 }).observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener('DOMContentLoaded', () => applyBarSizes());
 
-const state = { csrfToken:'', user:null, trainerClients:[], selectedTraineeId:null, activeAssignmentId:'assigned_demo_1', currentAssignment:null, exercises:[], workoutTemplates:[], exerciseCatalog:null, nutritionEntries:[], selectedFood:null, autoFilled:null };
+const state = { csrfToken:'', user:null, trainerClients:[], selectedTraineeId:null, activeAssignmentId:'assigned_demo_1', currentAssignment:null, exercises:[], workoutTemplates:[], exerciseCatalog:null, nutritionEntries:[], selectedFood:null, autoFilled:null, calendarMonth:null, calendarSelectedDate:null, calendarDays:new Map(), workoutFocusDate:null };
 const views=$$('.page'), navItems=$$('.nav-item[data-view]'), sidebar=$('.sidebar'), toast=$('#toast');
 
 const THEME_KEY='ptrainer-theme';
@@ -28,7 +28,7 @@ applyTheme(storedTheme());
 
 function showToast(message,duration=3200){toast.textContent=message;toast.classList.add('show');clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.classList.remove('show'),duration)}
 function setBusy(button,busy,label='Working…'){if(!button)return;button.disabled=busy;if(busy){button.dataset.label=button.textContent;button.textContent=label}else button.textContent=button.dataset.label||button.textContent}
-function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='clients'){loadNotes();loadInvitations()}if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
+function switchView(name){views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===name));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:'smooth'});if(name==='clients'){loadNotes();loadInvitations()}if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='calendar')loadCalendar();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages')loadMessages();if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
 async function api(path,options={}){const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'?{'X-CSRF-Token':state.csrfToken}:{}),...options.headers}});const data=await response.json().catch(()=>({error:{message:'Unexpected server response.'}}));if(!response.ok){const error=new Error(data.error?.message||'Request failed.');error.code=data.error?.code;throw error}return data}
 function initials(name){return name.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}
 function formatDate(value){if(!value)return 'Unscheduled';const date=new Date(value);return Number.isNaN(date.getTime())?'Unscheduled':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
@@ -217,7 +217,7 @@ $('#themeToggle').addEventListener('click',()=>{const next=document.documentElem
 
 async function loadDashboard(){const data=await api('/api/dashboard'),trainerMode=data.kind==='TRAINER';$('#trainerDashboard').hidden=!trainerMode;$('#traineeDashboard').hidden=trainerMode;if(trainerMode){state.trainerClients=data.clients||[];if(!state.trainerClients.some(item=>item.id===state.selectedTraineeId))state.selectedTraineeId=state.trainerClients[0]?.id||null;$('#activeClients').textContent=data.activeClients;$('#workoutsCompleted').textContent=data.workoutsCompleted;$('#completionRate').textContent=`${data.completionRate}%`;$('#progressUpdates').textContent=data.progressUpdates;$('#navClientCount').textContent=data.activeClients;$('#trainerDashboard .stat-grid article:nth-child(1) small').textContent='Active coaching relationships';$('#trainerDashboard .stat-grid article:nth-child(2) small').textContent=`${data.workoutsCompleted} completed total`;$('#trainerDashboard .stat-grid article:nth-child(3) small').textContent=`${data.workoutsCompleted} of ${data.assignedCount} assigned`;$('#trainerDashboard .stat-grid article:nth-child(4) small').textContent='Logged in the last 7 days';$('#trainerDashboard .welcome-row h1').innerHTML=`Good morning, ${escapeText(state.user.name.split(' ')[0])}`;$('#trainerDashboard .welcome-row .eyebrow').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}).toUpperCase();const picker=$('#clientPicker');picker.innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<option value="${client.id}" ${client.id===state.selectedTraineeId?'selected':''}>${escapeText(client.name)}</option>`).join(''):'<option value="">No active clients</option>';picker.disabled=!state.trainerClients.length;$('#dashboardClientRows').innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<tr><td><div class="client-cell"><span class="client-avatar lavender">${initials(client.name)}</span><span><strong>${escapeText(client.name)}</strong><small>${escapeText(client.email)}</small></span></div></td><td>${escapeText(client.lastWorkout)}</td><td><div class="mini-progress"><span><i data-w="${client.completionRate}"></i></span><b>${client.completedCount}/${client.assignedCount}</b></div></td><td>${client.assignedCount?'Program active':'No activity'}</td><td><span class="status ${client.completionRate<50?'attention':'active'}">${client.completionRate<50?'Needs check-in':'On track'}</span></td><td><button class="more" data-select-client="${client.id}" aria-label="Select ${escapeText(client.name)}">•••</button></td></tr>`).join(''):'<tr><td colspan="6">No active clients yet. Send an invitation to begin.</td></tr>';$('#clientGrid').innerHTML=state.trainerClients.length?state.trainerClients.map(client=>`<article class="client-profile"><div class="client-avatar lavender">${initials(client.name)}</div><div><h3>${escapeText(client.name)}</h3><p>${escapeText(client.lastWorkout)}</p></div><span class="status ${client.completionRate<50?'attention':'active'}">${client.completionRate<50?'Check-in due':'On track'}</span><div class="client-stats"><span><b>${client.completionRate}%</b>completion</span><span><b>${client.assignedCount}</b>assigned workouts</span></div><button class="secondary-button" data-open-client="${client.id}">Open client</button></article>`).join(''):'<article class="panel empty-state"><h2>No clients connected</h2><p>Invite your first client to begin coaching in Ptrainer.</p><button class="primary-button" data-open-invite>Invite client</button></article>';$$('[data-select-client],[data-open-client]').forEach(button=>button.addEventListener('click',()=>{state.selectedTraineeId=button.dataset.selectClient||button.dataset.openClient;picker.value=state.selectedTraineeId;switchView(button.dataset.openClient?'progress':'dashboard');showToast('Active client updated')}));const schedule=$('.schedule-list');schedule.innerHTML=data.upcoming?.length?data.upcoming.map(item=>`<div class="schedule-item"><div class="time"><strong>${formatDate(item.dueDate)}</strong></div><div class="color-line purple"></div><div class="client-avatar lavender">${initials(item.trainee.name)}</div><div class="schedule-info"><strong>${escapeText(item.trainee.name)}</strong><span>${escapeText(item.name)}</span></div><span class="status upcoming">${escapeText(item.status.toLowerCase())}</span></div>`).join(''):'<div class="template-item"><span>No upcoming workouts.</span></div>';$('.schedule-panel .panel-header p').textContent=`${data.upcoming?.length||0} upcoming workouts`;const next=data.upcoming?.[0],focus=$('.focus-card');focus.querySelector('h2').textContent=next?`${next.name} is next for ${next.trainee.name}`:'Your coaching queue is clear';focus.querySelector('p').textContent=next?`Due ${formatDate(next.dueDate)} · ${next.status.toLowerCase()}. Open the plan or add context while it is relevant.`:'Invite a client or assign a workout to create the next coaching action.';focus.querySelector('.session-readout span').textContent=`${data.completionRate}%`;focus.querySelector('.focus-metric small').textContent=`${data.workoutsCompleted} of ${data.assignedCount} completed`;const attention=$('.attention-list');attention.innerHTML=data.attentionItems?.length?data.attentionItems.map(item=>`<button class="attention-item"><span class="attention-icon warning">!</span><span><strong>Overdue workout</strong><small>${escapeText(item.trainee.name)} · ${escapeText(item.name)} · ${formatDate(item.dueDate)}</small></span><span>›</span></button>`).join(''):'<div class="template-item"><span>No overdue workouts.</span></div>';$('.attention-panel .panel-header p').textContent=`${data.attentionCount} items to review`}else{$('#traineeStreak').textContent=data.currentStreak;$('#traineeCompletion').textContent=`${data.weeklyCompletion}%`;$('.coach-chip').textContent=data.trainerName?`Coach: ${data.trainerName}`:'No trainer connected';if(data.todayWorkout){$('#traineeWorkoutName').textContent=data.todayWorkout.name;$('#traineeWorkoutMeta').textContent=`${data.todayWorkout.exerciseCount} exercises · Status: ${data.todayWorkout.status.toLowerCase()}`;state.activeAssignmentId=data.todayWorkout.id}else{$('#traineeWorkoutName').textContent='No workout assigned';$('#traineeWorkoutMeta').textContent='Your trainer’s next assignment will appear here.'}}}
 
-$('#clientPicker').addEventListener('change',event=>{state.selectedTraineeId=event.target.value||null;const current=$('.page.active-view')?.id?.replace('-view','');if(['progress','nutrition','messages','builder','workouts'].includes(current))switchView(current);loadNotes();showToast('Active client updated')});
+$('#clientPicker').addEventListener('change',event=>{state.selectedTraineeId=event.target.value||null;const current=$('.page.active-view')?.id?.replace('-view','');if(['progress','nutrition','messages','builder','workouts','calendar'].includes(current))switchView(current);loadNotes();showToast('Active client updated')});
 
 const dialog=$('#inviteDialog'),inviteForm=$('#inviteForm'),inviteError=$('#inviteError');const openInvite=()=>{inviteError.textContent='';inviteForm.reset();dialog.showModal()};$('#inviteButton').addEventListener('click',openInvite);$$('[data-open-invite]').forEach(button=>button.addEventListener('click',openInvite));[...dialog.querySelectorAll('[data-close-dialog], .modal-close')].forEach(button=>button.addEventListener('click',()=>dialog.close()));
 $('#clientGrid').addEventListener('click',event=>{if(event.target.closest('[data-open-invite]'))openInvite()});
@@ -386,12 +386,165 @@ async function hydrateFromLogs(assignmentId){
     $('#workoutSaveState').textContent='History unavailable';
   }
 }
+// The calendar can hand over a workout that is months old and therefore nowhere
+// near the first page of the list. Rather than silently opening whatever is
+// newest, fetch that one day's window and merge it in, so the picker still shows
+// the usual page and the workout that was actually asked for is in it.
+async function withFocusedDay(assignments){
+  const focusDate=state.workoutFocusDate;
+  state.workoutFocusDate=null;
+  if(!focusDate||assignments.some(item=>item.id===state.activeAssignmentId))return assignments;
+  try{
+    const client=selectedClient(),params=new URLSearchParams({from:focusDate,to:focusDate,limit:'200'});
+    if(state.user?.role==='TRAINER'&&client)params.set('traineeId',client.id);
+    const day=await api(`/api/assigned-workouts?${params}`);
+    const known=new Set(assignments.map(item=>item.id));
+    return [...day.assignments.filter(item=>!known.has(item.id)),...assignments];
+  }catch{return assignments}
+}
 async function loadAssignments(){try{const client=selectedClient();
 // The list is paged now, so the trainee filter belongs in the query rather than
 // applied to whatever happened to land on the first page.
-const result=await api(`/api/assigned-workouts${state.user?.role==='TRAINER'&&client?`?traineeId=${encodeURIComponent(client.id)}`:''}`),visible=result.assignments,assignment=visible.find(item=>item.id===state.activeAssignmentId)||visible.find(item=>item.status==='ASSIGNED'||item.status==='IN_PROGRESS')||visible[0];state.currentAssignment=assignment||null;renderAssignmentPicker(visible,assignment);if(assignment){state.activeAssignmentId=assignment.id;$('.workout-header h1').textContent=assignment.templateSnapshot.name;state.exercises=assignment.templateSnapshot.exercises.map(item=>({name:item.name,meta:`${item.sets} sets · ${item.reps} reps · ${item.restSeconds} sec rest`,tag:'Exercise',done:false,sets:Array.from({length:item.sets},()=>blankSet(item,state.user?.role==='TRAINEE'))}));await hydrateFromLogs(assignment.id)}else{$('.workout-header h1').textContent='No workout assigned';state.exercises=[];$('#workoutSaveState').textContent=''}$('#editWorkoutButton').disabled=!assignment||assignment.status!=='ASSIGNED';$('#finishWorkout').disabled=!assignment||state.user?.role==='TRAINER'}catch{state.currentAssignment=null;state.exercises=[]}updateWorkoutProgress();renderExercises()}
+const result=await api(`/api/assigned-workouts${state.user?.role==='TRAINER'&&client?`?traineeId=${encodeURIComponent(client.id)}`:''}`),visible=await withFocusedDay(result.assignments),assignment=visible.find(item=>item.id===state.activeAssignmentId)||visible.find(item=>item.status==='ASSIGNED'||item.status==='IN_PROGRESS')||visible[0];state.currentAssignment=assignment||null;renderAssignmentPicker(visible,assignment);if(assignment){state.activeAssignmentId=assignment.id;$('.workout-header h1').textContent=assignment.templateSnapshot.name;state.exercises=assignment.templateSnapshot.exercises.map(item=>({name:item.name,meta:`${item.sets} sets · ${item.reps} reps · ${item.restSeconds} sec rest`,tag:'Exercise',done:false,sets:Array.from({length:item.sets},()=>blankSet(item,state.user?.role==='TRAINEE'))}));await hydrateFromLogs(assignment.id)}else{$('.workout-header h1').textContent='No workout assigned';state.exercises=[];$('#workoutSaveState').textContent=''}$('#editWorkoutButton').disabled=!assignment||assignment.status!=='ASSIGNED';$('#finishWorkout').disabled=!assignment||state.user?.role==='TRAINER'}catch{state.currentAssignment=null;state.exercises=[]}updateWorkoutProgress();renderExercises()}
 $('#assignmentPicker').addEventListener('change',event=>{state.activeAssignmentId=event.target.value;loadAssignments()});
 $('#finishWorkout').addEventListener('click',async event=>{const button=event.currentTarget;setBusy(button,true,'Saving…');try{clearTimeout(draftTimer);const key=`workout_${Date.now()}_${crypto.randomUUID().replaceAll('-','')}`;const data=await api(`/api/assigned-workouts/${state.activeAssignmentId}/logs`,{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({sets:setsPayload()})});$('#workoutSaveState').textContent='Submitted';showToast(`Workout saved securely · ${data.log.completedCount}/${state.exercises.length} complete`);await loadAssignments()}catch(error){showToast(error.message)}finally{setBusy(button,false)}});
+
+
+/* Calendar — a read-only month view of work that is already assigned.
+   It writes nothing. A trainer still assigns and edits in Workouts and a trainee
+   still logs there; choosing a workout here hands off to that view rather than
+   growing a second logger that could drift from the first. */
+const CALENDAR_STATUS_LABEL={ASSIGNED:'Assigned',IN_PROGRESS:'In progress',COMPLETED:'Completed',SKIPPED:'Skipped',ARCHIVED:'Archived'};
+const CALENDAR_WEEKDAYS=[['Mon','Monday'],['Tue','Tuesday'],['Wed','Wednesday'],['Thu','Thursday'],['Fri','Friday'],['Sat','Saturday'],['Sun','Sunday']];
+const CALENDAR_PAGE_CAP=6;
+// Days are carried as YYYY-MM-DD text in the viewer's own zone throughout. Going
+// through `new Date(dueDate)` would read the string as UTC and move a workout a
+// day west of Greenwich, which is the one mistake a calendar cannot make.
+const calendarKey=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+const calendarDate=key=>{const [year,month,day]=String(key).split('-').map(Number);return new Date(year,month-1,day)};
+const calendarDayLabel=key=>calendarDate(key).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+const calendarMonthOf=date=>new Date(date.getFullYear(),date.getMonth(),1);
+// The grid always starts on the Monday on or before the 1st and runs six weeks,
+// so the layout never reflows as the months change length.
+const calendarGridStart=month=>{const first=calendarMonthOf(month);return new Date(first.getFullYear(),first.getMonth(),1-((first.getDay()+6)%7))};
+
+function calendarMonth(){return state.calendarMonth||(state.calendarMonth=calendarMonthOf(new Date()))}
+function shiftCalendarMonth(step){const month=calendarMonth();state.calendarMonth=new Date(month.getFullYear(),month.getMonth()+step,1);state.calendarSelectedDate=null;return loadCalendar()}
+
+// A month is a window, not a page, so the range goes to the server and the rows
+// come back a page at a time. The cap stops a pathological month from paging
+// forever, and the summary says plainly when it was hit.
+async function fetchCalendarWindow(from,to){
+  const client=selectedClient(),rows=[];let cursor=null;
+  for(let page=0;page<CALENDAR_PAGE_CAP;page+=1){
+    const params=new URLSearchParams({from,to,limit:'200'});
+    if(state.user?.role==='TRAINER'&&client)params.set('traineeId',client.id);
+    if(cursor)params.set('cursor',cursor);
+    const result=await api(`/api/assigned-workouts?${params}`);
+    rows.push(...result.assignments);
+    cursor=result.nextCursor;
+    if(!cursor)return {rows,truncated:false};
+  }
+  return {rows,truncated:true};
+}
+
+function renderCalendarDay(){
+  const list=$('#calendarDayList'),key=state.calendarSelectedDate;
+  if(!key){$('#calendarDayLabel').textContent='No day selected';list.innerHTML='<p class="calendar-empty">Choose a day in the grid.</p>';return}
+  $('#calendarDayLabel').textContent=calendarDayLabel(key);
+  const entries=state.calendarDays.get(key)||[];
+  list.innerHTML=entries.length?entries.map(item=>`<article class="calendar-entry">
+      <div><strong>${escapeText(item.templateSnapshot?.name||'Workout')}</strong><small>${item.templateSnapshot?.exercises?.length||0} exercises${item.seriesId?' · part of a repeating program':''}</small></div>
+      <span class="calendar-status status-${escapeText(String(item.status).toLowerCase())}">${escapeText(CALENDAR_STATUS_LABEL[item.status]||item.status)}</span>
+      <button class="secondary-button" type="button" data-open-assignment="${escapeText(item.id)}">Open in Workouts</button>
+    </article>`).join(''):'<p class="calendar-empty">Nothing scheduled on this day.</p>';
+}
+
+function selectCalendarDay(key){
+  state.calendarSelectedDate=key;
+  $$('#calendarBody .calendar-day').forEach(button=>{
+    const active=button.dataset.date===key;
+    button.classList.toggle('selected',active);
+    button.setAttribute('aria-pressed',String(active));
+    button.tabIndex=active?0:-1;
+  });
+  renderCalendarDay();
+}
+
+function renderCalendarGrid(){
+  const month=calendarMonth(),start=calendarGridStart(month),today=calendarKey(new Date()),monthIndex=month.getMonth();
+  $('#calendarWeekdays').innerHTML=CALENDAR_WEEKDAYS.map(([short,full])=>`<th scope="col"><span aria-hidden="true">${short}</span><span class="sr-only">${full}</span></th>`).join('');
+  const rows=[];
+  for(let week=0;week<6;week+=1){
+    const cells=[];
+    for(let day=0;day<7;day+=1){
+      const date=new Date(start.getFullYear(),start.getMonth(),start.getDate()+week*7+day),key=calendarKey(date);
+      const entries=state.calendarDays.get(key)||[],outside=date.getMonth()!==monthIndex;
+      // The count belongs in the accessible name: a row of dots says nothing to
+      // somebody who cannot see them.
+      const name=`${calendarDayLabel(key)}, ${entries.length===1?'1 workout':`${entries.length} workouts`}`;
+      const dots=entries.slice(0,3).map(item=>`<i class="status-${escapeText(String(item.status).toLowerCase())}"></i>`).join('');
+      cells.push(`<td><button type="button" class="calendar-day${outside?' outside':''}${key===today?' today':''}" data-date="${key}" aria-pressed="false" aria-label="${escapeText(name)}" tabindex="-1"><span class="calendar-day-number">${date.getDate()}</span><span class="calendar-day-dots" aria-hidden="true">${dots}${entries.length>3?`<b>+${entries.length-3}</b>`:''}</span></button></td>`);
+    }
+    rows.push(`<tr>${cells.join('')}</tr>`);
+  }
+  $('#calendarBody').innerHTML=rows.join('');
+}
+
+async function loadCalendar(){
+  const month=calendarMonth(),start=calendarGridStart(month);
+  const end=new Date(start.getFullYear(),start.getMonth(),start.getDate()+41);
+  const startKey=calendarKey(start),endKey=calendarKey(end);
+  $('#calendarMonthLabel').textContent=month.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  try{
+    const {rows,truncated}=await fetchCalendarWindow(startKey,endKey);
+    state.calendarDays=new Map();
+    for(const item of rows){
+      if(!item.dueDate)continue;
+      const key=String(item.dueDate).slice(0,10),bucket=state.calendarDays.get(key);
+      if(bucket)bucket.push(item);else state.calendarDays.set(key,[item]);
+    }
+    for(const bucket of state.calendarDays.values())bucket.sort((a,b)=>String(a.templateSnapshot?.name||'').localeCompare(String(b.templateSnapshot?.name||'')));
+    const monthPrefix=`${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}`;
+    const inMonth=rows.filter(item=>String(item.dueDate||'').startsWith(monthPrefix));
+    const done=inMonth.filter(item=>item.status==='COMPLETED').length;
+    const client=selectedClient(),who=state.user?.role==='TRAINER'?(client?`${client.name} · `:'No active client · '):'';
+    $('#calendarSummary').textContent=`${who}${inMonth.length===1?'1 workout':`${inMonth.length} workouts`} this month · ${done} completed${truncated?' · showing the first pages only':''}`;
+  }catch(error){
+    // A calendar that cannot load must not take the rest of the app with it.
+    state.calendarDays=new Map();
+    $('#calendarSummary').textContent=error.message;
+  }
+  renderCalendarGrid();
+  const todayKey=calendarKey(new Date());
+  if(!state.calendarSelectedDate||state.calendarSelectedDate<startKey||state.calendarSelectedDate>endKey){
+    state.calendarSelectedDate=todayKey>=startKey&&todayKey<=endKey?todayKey:calendarKey(month);
+  }
+  selectCalendarDay(state.calendarSelectedDate);
+}
+
+$('#calendarPrev').addEventListener('click',()=>shiftCalendarMonth(-1));
+$('#calendarNext').addEventListener('click',()=>shiftCalendarMonth(1));
+$('#calendarToday').addEventListener('click',()=>{state.calendarMonth=calendarMonthOf(new Date());state.calendarSelectedDate=calendarKey(new Date());loadCalendar()});
+$('#calendarBody').addEventListener('click',event=>{const button=event.target.closest('.calendar-day');if(button)selectCalendarDay(button.dataset.date)});
+// Roving tabindex: forty-two days in the tab order would bury everything after
+// the grid, so the arrows move within it and only one day is tabbable.
+$('#calendarBody').addEventListener('keydown',event=>{
+  const button=event.target.closest('.calendar-day');if(!button)return;
+  const step={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[event.key];
+  if(step===undefined&&!['Home','End','PageUp','PageDown'].includes(event.key))return;
+  event.preventDefault();
+  if(event.key==='PageUp'||event.key==='PageDown')return void shiftCalendarMonth(event.key==='PageUp'?-1:1).then(()=>$('#calendarBody .calendar-day.selected')?.focus());
+  const days=$$('#calendarBody .calendar-day'),index=days.indexOf(button),row=Math.floor(index/7);
+  const target=event.key==='Home'?row*7:event.key==='End'?row*7+6:Math.min(days.length-1,Math.max(0,index+step));
+  days[target].focus();
+});
+$('#calendarDayList').addEventListener('click',event=>{
+  const button=event.target.closest('[data-open-assignment]');if(!button)return;
+  state.activeAssignmentId=button.dataset.openAssignment;
+  state.workoutFocusDate=state.calendarSelectedDate;
+  switchView('workouts');
+});
 
 const workoutEditorDialog=$('#workoutEditorDialog'),workoutEditorForm=$('#workoutEditorForm');
 async function getExerciseCatalog(){if(state.exerciseCatalog)return state.exerciseCatalog;const data=await api('/api/exercises?limit=250');state.exerciseCatalog=data.exercises||[];return state.exerciseCatalog}

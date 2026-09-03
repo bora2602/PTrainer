@@ -11,7 +11,7 @@ import {
   convertUnit, normalizedProgressValue, normalizeProgressEntry,
   normalizeWorkoutInput, normalizeSetRows, exerciseCompletion,
   nutritionValues, normalizeNutritionEntry,
-  normalizeExerciseInput, normalizeTrainerNote, normalizeSchedule,
+  normalizeExerciseInput, normalizeTrainerNote, normalizeSchedule, normalizeDateWindow,
   normalizeRelationshipPermissions, relationshipPermissions,
   encodeCursor, decodeCursor
 } from './validation.mjs';
@@ -193,6 +193,24 @@ test('normalizeSchedule expands a repeat and refuses an endless one', () => {
   assert.equal(normalizeSchedule({ startDate: '2026-09-01', endDate: '2026-09-08', frequency: 'YEARLY' }), null);
   // One request must not be able to create thousands of rows.
   assert.equal(normalizeSchedule({ startDate: '2026-01-01', endDate: '2030-01-01', frequency: 'DAILY' }).dates.length, 52);
+});
+
+test('normalizeDateWindow takes both ends of a bounded window or none', () => {
+  assert.deepEqual(normalizeDateWindow('2026-09-01', '2026-09-30'), { from: '2026-09-01', to: '2026-09-30' });
+  assert.deepEqual(normalizeDateWindow(null, null), { from: null, to: null }, 'no window is not an error');
+  assert.deepEqual(normalizeDateWindow('2026-09-01', '2026-09-01'), { from: '2026-09-01', to: '2026-09-01' },
+    'a single day is a window');
+  // Half a window would have to guess the other end, and a guessed month is the
+  // wrong month.
+  assert.equal(normalizeDateWindow('2026-09-01', ''), null, 'a start with no end is refused');
+  assert.equal(normalizeDateWindow('', '2026-09-30'), null, 'an end with no start is refused');
+  assert.equal(normalizeDateWindow('2026-09-30', '2026-09-01'), null, 'end before start');
+  assert.equal(normalizeDateWindow('2026-02-30', '2026-03-01'), null, 'a date that does not exist');
+  assert.equal(normalizeDateWindow('not-a-date', '2026-09-30'), null);
+  // An unbounded range is a full-table scan wearing a date filter.
+  assert.deepEqual(normalizeDateWindow('2026-01-01', '2027-01-01'), { from: '2026-01-01', to: '2027-01-01' },
+    'a year is the most a calendar shows at once');
+  assert.equal(normalizeDateWindow('2026-01-01', '2027-01-02'), null, 'more than a year is refused');
 });
 
 test('relationship permissions default closed for writing and merge over stored values', () => {

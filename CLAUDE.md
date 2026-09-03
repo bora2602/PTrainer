@@ -169,6 +169,8 @@ Any PR touching authorization logic must include a test that proves the *denied*
 
 Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. They are not to be extended, and the maintainer should either move them into scope in the plan document or record them as pilot-only extras — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
 
+The **calendar view** is a deliberate borderline case, resolved rather than drifted into: plan §2 lists "calendar and appointments" under later releases, but what shipped is only a read-only month view of assignments the MVP already creates — §2's MVP includes "assignment, scheduling" and §6 already specifies "upcoming assignments" on the trainer dashboard. It reads; it writes nothing. **An iCal/webcal feed, Google or Outlook sync, and appointment booking stay out** and need the plan updated first — the reasoning for each is in [docs/architecture-decisions.md](docs/architecture-decisions.md).
+
 ## 10. Definition of done for any MVP feature
 
 A feature isn't done when it works for the happy path. It's done when:

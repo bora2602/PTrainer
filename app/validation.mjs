@@ -137,6 +137,22 @@ function normalizeSchedule(body){
   return {frequency,startDate,endDate,dates};
 }
 
+// A calendar asks a different question from a list: not "the next page" but
+// "everything scheduled between these two dates". The window is capped because
+// an unbounded range is a full-table scan wearing a date filter, and no calendar
+// view shows more than a year at once. Half a window is refused rather than
+// defaulted: guessing the missing end would quietly return the wrong month.
+const MAX_DATE_WINDOW_DAYS=366;
+function normalizeDateWindow(from,to){
+  const start=String(from||'').slice(0,10),end=String(to||'').slice(0,10);
+  if(!start&&!end)return {from:null,to:null};
+  if(!start||!end)return null;
+  if(!validDateOnly(start)||!validDateOnly(end)||end<start)return null;
+  const days=(Date.parse(`${end}T00:00:00.000Z`)-Date.parse(`${start}T00:00:00.000Z`))/86400000;
+  if(days+1>MAX_DATE_WINDOW_DAYS)return null;
+  return {from:start,to:end};
+}
+
 function nutritionValues(body){const numberOrNull=value=>value===''||value==null?null:Number(value),values={calories:numberOrNull(body.calories),proteinG:numberOrNull(body.proteinG),carbsG:numberOrNull(body.carbsG),fatG:numberOrNull(body.fatG),waterMl:numberOrNull(body.waterMl)};if(Object.values(values).some(value=>value!==null&&(!Number.isFinite(value)||value<0||value>100000))||values.calories!==null&&!Number.isInteger(values.calories)||values.waterMl!==null&&!Number.isInteger(values.waterMl))return null;return values}
 function normalizeNutritionEntry(body){const values=nutritionValues(body),entryDate=String(body.entryDate||''),entryType=String(body.entryType||'').toUpperCase(),description=String(body.description||'').trim(),rawBarcode=String(body.foodBarcode||''),foodBarcode=rawBarcode?normalizeBarcode(rawBarcode):null,foodName=String(body.foodName||'').trim(),foodBrand=String(body.foodBrand||'').trim(),foodQuantityG=body.foodQuantityG===''||body.foodQuantityG==null?null:Number(body.foodQuantityG),dataSource=FOOD_DATA_SOURCES.has(body.dataSource)?body.dataSource:null;if(!values||!validDateOnly(entryDate)||!NUTRITION_ENTRY_TYPES.has(entryType)||description.length>1000||foodName.length>200||foodBrand.length>200||rawBarcode&&!foodBarcode||foodQuantityG!==null&&(!Number.isFinite(foodQuantityG)||foodQuantityG<=0||foodQuantityG>100000)||(!description&&Object.values(values).every(value=>value===null)))return null;if(!foodBarcode&&!foodName)return{entryDate,entryType,description,...values,foodBarcode:null,foodName:null,foodBrand:null,foodQuantityG:null,dataSource:null};return{entryDate,entryType,description,...values,foodBarcode,foodName:foodName||'Packaged food',foodBrand,foodQuantityG,dataSource}}
 // Keyset pagination, not offset. An offset re-scans everything it skips and, if
@@ -213,6 +229,8 @@ export {
   normalizeProgressEntry,
   SCHEDULE_STEP_DAYS,
   normalizeSchedule,
+  MAX_DATE_WINDOW_DAYS,
+  normalizeDateWindow,
   RELATIONSHIP_PERMISSION_DEFAULTS,
   RELATIONSHIP_PERMISSION_KEYS,
   relationshipPermissions,

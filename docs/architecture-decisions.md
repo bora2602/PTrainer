@@ -21,6 +21,7 @@ This document records which infrastructure concepts are appropriate for the curr
 | Error logging | JSON request/error logs include a request ID, route, status, and duration without logging message, nutrition, password, or token content. |
 | Food-name lookup | Authenticated, rate-limited (`60/min`) server search that answers from a bundled generic-food table first and adds Open Food Facts matches; the typed name is never logged, results are cached for 30 minutes, and an unreachable Open Food Facts degrades to reference foods only. Implausible crowd-sourced entries (calories that cannot be reconciled with their own macros) are dropped. The client auto-fills only while the macro fields still hold what a lookup wrote. |
 | Packaged-food lookup | Authenticated, rate-limited server proxy to Open Food Facts v3; only the barcode is sent, successful lookups are cached for six hours, and logged nutrition stores a product snapshot. Compatible browsers decode camera frames locally with the native Barcode Detector API; manual UPC/EAN/GTIN entry remains available. |
+| Calendar | A read-only month view of assignments that already exist. `GET /api/assigned-workouts` takes a `from`/`to` window, capped at a year, and still pages by cursor inside it; unscheduled work belongs to no window. Nothing is created or edited here - assigning stays in Workouts - so the view adds no writable surface, no new table and no third-party dependency. `DATE` columns are read back with `to_char` because node-postgres and PGlite disagree about what a bare date means, and a calendar that moves a workout a day is worse than no calendar. |
 | Monitoring and observability | `/healthz`, `/readyz`, protected production `/metrics`, request counts, error counts, latency average, database readiness, and audit events. |
 | CI/CD | Pull requests and `main` run migrations, API/security tests, and a container build. Version tags publish an immutable image to GitHub Container Registry. |
 | Deployment | Docker image, PostgreSQL Compose service, optional Caddy edge profile, environment validation, and graceful shutdown. |
@@ -66,13 +67,35 @@ them here rather than quietly treating them as in scope:
 
 Neither should be extended until that decision is made.
 
+**Where the calendar sits, and where it stops.** Plan section 2 lists "calendar
+and appointments" under later releases. What shipped is deliberately narrower
+than that phrase: a month view of assignments the MVP already creates, because
+"assignment, scheduling" is in the recommended MVP and the trainer dashboard is
+already specified to show upcoming assignments. It reads data that existed
+before it and writes none.
+
+Three things named by that later-release line remain out, and each was
+considered and declined rather than overlooked:
+
+- **An iCal/webcal feed or `.ics` download.** Calendar clients cannot send a
+  session cookie or a CSRF token, so a feed needs a separate revocable per-user
+  token, and anyone holding that URL reads the workout names on it. That is a new
+  credential and a new disclosure surface, not a rendering change.
+- **Google or Outlook calendar sync.** OAuth, a stored refresh token per user, a
+  third runtime dependency, and personal health-adjacent data leaving the
+  deployment - which section 10 of the plan puts behind legal review.
+- **Appointments and booking.** A different domain from workout assignment
+  (availability, duration, cancellation, no-shows) with its own tables.
+
+Any of the three needs the plan updated first.
+
 ## Testing
 
 | Layer | What runs |
 |---|---|
 | Unit | `app/validation.test.mjs` via `node --test`. No server, no database. Covers password and date rules, unit conversion, set-row and schedule normalization, permission merging, and cursor encoding. |
 | Static | `work/accessibility-check.mjs`. Every control named, every dialog named, chart text alternative, live regions, touch targets. Dependency-free on purpose; contrast, focus order and screen-reader phrasing still need a person. |
-| API | Five suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, retention, and pagination. |
+| API | Six suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, calendar date windows, retention, and pagination. |
 | End to end | `work/e2e-coaching-journey.mjs` walks the plan's definition of done on accounts created during the run. |
 | Authorization probes | `work/endpoint-exposure-check.mjs` (nothing answers unauthenticated) and `work/cross-account-check.mjs` (no record is reachable by guessing an id). Both now run in CI. |
 
