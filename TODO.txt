@@ -7,3 +7,4 @@ Web page look optimization
 Login page description or text change -----> it should say something like The best platform for personal trainers and their clients
 Client/user message interface change for example add files, pictures and emojis 
 Mobile look improvement
+add pictures to chat
