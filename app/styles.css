@@ -208,3 +208,7 @@ html[data-theme="light"] .faq-item,html[data-theme="light"] .contact-form{backgr
   .faq-answer,.faq-item.open .faq-answer{transition:visibility 0s}
   .faq-indicator::before,.faq-indicator::after{transition:none}
 }
+
+/* Support dialog. It reuses .modal-card and .contact-success; only the privacy
+   line is particular to it. */
+.support-privacy{margin:0;color:var(--color-muted);font-size:10px;line-height:1.55}

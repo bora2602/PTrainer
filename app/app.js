@@ -211,7 +211,7 @@ $('#registerForm').addEventListener('submit',async event=>{event.preventDefault(
 $$('[data-demo]').forEach(button=>button.addEventListener('click',async()=>{const role=button.dataset.demo;const payload=role==='trainer'?{email:'trainer@ptrainer.local',password:'DemoTrainer1!'}:{email:'trainee@ptrainer.local',password:'DemoTrainee1!'};setBusy(button,true,'Opening…');try{const result=await api('/api/auth/login',{method:'POST',body:JSON.stringify(payload)});state.csrfToken=result.csrfToken;await showApp(result.user);showToast(`${role==='trainer'?'Trainer':'Trainee'} demo opened`)}catch(error){$('#loginError').textContent=error.message}finally{setBusy(button,false)}}));
 $('#logoutButton').addEventListener('click',async()=>{try{await api('/api/auth/logout',{method:'POST',body:'{}'})}finally{state.csrfToken='';const session=await api('/api/session');state.csrfToken=session.csrfToken;showAuth();showToast('Signed out safely')}});
 
-navItems.forEach(item=>item.addEventListener('click',()=>switchView(item.dataset.view)));$$('[data-go]').forEach(button=>button.addEventListener('click',()=>switchView(button.dataset.go)));$('.mobile-menu').addEventListener('click',()=>sidebar.classList.toggle('open'));$('#quickNoteButton').addEventListener('click',()=>switchView('messages'));$('#helpButton').addEventListener('click',()=>{showToast('Pilot support: use Settings → Export my data when reporting a data issue',6000)});$('#viewInstructions').addEventListener('click',()=>showToast('Follow the prescribed sets and record actual reps and load. Save partial progress at any time.',6500));
+navItems.forEach(item=>item.addEventListener('click',()=>switchView(item.dataset.view)));$$('[data-go]').forEach(button=>button.addEventListener('click',()=>switchView(button.dataset.go)));$('.mobile-menu').addEventListener('click',()=>sidebar.classList.toggle('open'));$('#quickNoteButton').addEventListener('click',()=>switchView('messages'));$('#helpButton').addEventListener('click',openSupportDialog);$('#viewInstructions').addEventListener('click',()=>showToast('Follow the prescribed sets and record actual reps and load. Save partial progress at any time.',6500));
 $('.search input').addEventListener('input',event=>{const term=event.target.value.trim().toLowerCase();$$('#dashboardClientRows tr,#clientGrid .client-profile').forEach(item=>item.hidden=Boolean(term)&&!item.textContent.toLowerCase().includes(term))});
 $('#themeToggle').addEventListener('click',()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem(THEME_KEY,next)}catch{}applyTheme(next,true)});
 
@@ -626,6 +626,46 @@ if(contactForm){
       contactError.textContent=error.message;
     }finally{
       setBusy(contactButton,false);
+    }
+  });
+}
+
+// ── Help & support ───────────────────────────────────────────────────────────
+// The same endpoint the public contact form posts to. Nothing here sends a name
+// or address: the server takes both from the session, so a support message
+// always carries the identity of the account that actually sent it.
+const supportDialog=$('#supportDialog');
+function openSupportDialog(){
+  const form=$('#supportForm');
+  form.reset();
+  $('#supportError').textContent='';
+  $('#supportSuccess').hidden=true;
+  $('#supportReplyTo').textContent=state.user?.email
+    ? `We reply to ${state.user.email}, the address on your account.`
+    : 'We reply to the address on your account.';
+  supportDialog.showModal();
+  form.querySelector('[name="subject"]').focus();
+}
+if(supportDialog){
+  $$('[data-close-support]').forEach(button=>button.addEventListener('click',()=>supportDialog.close()));
+  $('#supportForm').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=$('#supportSubmit');
+    if(button.disabled)return;
+    const fields=new FormData(event.currentTarget);
+    const subject=String(fields.get('subject')||'').trim(),message=String(fields.get('message')||'').trim();
+    $('#supportError').textContent='';
+    if(subject.length<2)return void($('#supportError').textContent='Add a short subject.');
+    if(message.length<10)return void($('#supportError').textContent='Tell us a little more — at least 10 characters.');
+    setBusy(button,true,'Sending…');
+    try{
+      await api('/api/contact',{method:'POST',body:JSON.stringify({subject,message})});
+      supportDialog.close();
+      showToast('Thanks — your message reached support');
+    }catch(error){
+      $('#supportError').textContent=error.message;
+    }finally{
+      setBusy(button,false);
     }
   });
 }

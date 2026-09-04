@@ -502,36 +502,53 @@ async function api(req,res,url){
   let session=await getSession(req,res);
   if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION})}
   if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
-  // Public contact form. Unauthenticated on purpose - somebody who cannot sign
-  // in is exactly who most needs to reach us - so it carries its own limits:
-  // the shared CSRF/origin check, a per-address and per-IP rate limit, a
-  // honeypot, and a minimum fill time. The message body is never logged.
+  // Contact and in-app support share one endpoint. It is reachable signed out,
+  // on purpose - somebody who cannot sign in is exactly who most needs to reach
+  // us - so an anonymous message carries its own limits: the shared CSRF/origin
+  // check, a per-address and per-IP rate limit, a honeypot, and a minimum fill
+  // time. The message body is never logged.
   if(req.method==='POST'&&url.pathname==='/api/contact'){
     if(!mutationAllowed(req,res,session))return;
     const body=await readJson(req,res);if(!body)return;
-    const email=cleanEmail(body.email),name=String(body.name||'').trim(),subject=String(body.subject||'').trim(),message=String(body.message||'').trim();
-    if(!validName(name))return json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2-80 characters.',field:'name'}});
-    if(!validEmail(email))return json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address so we can reply.',field:'email'}});
+    // A signed-in sender is identified by their session, never by what the
+    // request claims: a name and address out of the body would let anyone put
+    // somebody else's identity on a support message.
+    const sender=await sessionUser(session);
+    const email=sender?sender.email:cleanEmail(body.email),name=sender?sender.name:String(body.name||'').trim();
+    const subject=String(body.subject||'').trim(),message=String(body.message||'').trim();
+    if(!sender&&!validName(name))return json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2-80 characters.',field:'name'}});
+    if(!sender&&!validEmail(email))return json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address so we can reply.',field:'email'}});
     if(subject.length<2||subject.length>120)return json(res,422,{error:{code:'SUBJECT_INVALID',message:'Subject must be 2-120 characters.',field:'subject'}});
     if(message.length<10||message.length>2000)return json(res,422,{error:{code:'MESSAGE_INVALID',message:'Message must be 10-2000 characters.',field:'message'}});
-    // Two silent filters. A bot that fills the hidden field, or submits faster
-    // than anybody could type the form, gets the same 202 a person gets: an
-    // error would tell it which signal to stop tripping.
-    const trapped=String(body.company||'').trim().length>0;
-    // A missing timing counts as too fast rather than as absent: the form always
-    // sends one, so the requests that omit it are the scripted posts this is for.
-    const elapsed=Number(body.elapsedMs);
-    const tooFast=!Number.isFinite(elapsed)||elapsed<2500;
-    if(trapped||tooFast){
-      log('info','contact_message_discarded',{reason:trapped?'honeypot':'too_fast'});
-      return json(res,202,{message:'Thanks - your message has been sent.'});
+    // The spam filters exist to keep an open endpoint from being a free mailer,
+    // so they apply to anonymous senders only. Running them on a signed-in user
+    // would silently drop a real support request from somebody who typed
+    // quickly, which is the one failure this feature cannot afford.
+    if(!sender){
+      // A bot that fills the hidden field, or submits faster than anybody could
+      // type the form, gets the same 202 a person gets: an error would tell it
+      // which signal to stop tripping.
+      const trapped=String(body.company||'').trim().length>0;
+      // A missing timing counts as too fast rather than as absent: the form
+      // always sends one, so requests that omit it are the scripted posts.
+      const elapsed=Number(body.elapsedMs);
+      const tooFast=!Number.isFinite(elapsed)||elapsed<2500;
+      if(trapped||tooFast){
+        log('info','contact_message_discarded',{reason:trapped?'honeypot':'too_fast'});
+        return json(res,202,{message:'Thanks - your message has been sent.'});
+      }
     }
-    if(!rateLimit(`contact:${clientIp(req)}`,5,3600000)||!rateLimit(`contact-address:${email}`,3,3600000))
-      return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages sent from here. Try again later.'}});
+    const withinLimit=sender
+      ?rateLimit(`contact-user:${sender.id}`,5,3600000)
+      :rateLimit(`contact:${clientIp(req)}`,5,3600000)&&rateLimit(`contact-address:${email}`,3,3600000);
+    if(!withinLimit)return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages sent from here. Try again later.'}});
+    // The channel is named in the mail so a reply lands in the right context,
+    // and a signed-in sender's role saves a lookup before answering them.
+    const origin=sender?`the in-app support form as a signed-in ${sender.role.toLowerCase()}`:'the Ptrainer contact form';
     const delivery=await sendEmail({
       to:CONTACT_EMAIL_TO,
-      subject:`Ptrainer contact: ${subject}`,
-      text:`${name} <${email}> sent this through the Ptrainer contact form.\n\nSubject: ${subject}\n\n${message}\n\nReply to ${email}.\n`
+      subject:`Ptrainer ${sender?'support':'contact'}: ${subject}`,
+      text:`${name} <${email}> sent this through ${origin}.\n\nSubject: ${subject}\n\n${message}\n\nReply to ${email}.\n`
     },log);
     if(!delivery.delivered){
       // Mail is a non-critical dependency everywhere else in the app, but here
@@ -539,7 +556,7 @@ async function api(req,res,url){
       // message silently, so the sender is told and given the address instead.
       return json(res,502,{error:{code:'CONTACT_UNDELIVERABLE',message:`We could not send that just now. Please email ${CONTACT_EMAIL_TO} directly.`}});
     }
-    log('info','contact_message_sent',{subjectLength:subject.length});
+    log('info','contact_message_sent',{subjectLength:subject.length,authenticated:Boolean(sender)});
     return json(res,202,{message:'Thanks - your message has been sent.'});
   }
   if(await authApi(req,res,url,session))return;

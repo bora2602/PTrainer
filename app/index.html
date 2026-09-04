@@ -282,6 +282,18 @@
     </main>
   </div>
 
+  <dialog id="supportDialog" aria-labelledby="supportTitle">
+    <form class="modal-card" id="supportForm" novalidate>
+      <button class="modal-close" type="button" data-close-support aria-label="Close">×</button>
+      <div class="modal-icon">?</div><p class="eyebrow">PILOT SUPPORT</p><h2 id="supportTitle">Tell us what you need</h2><p id="supportReplyTo">We reply to the address on your account.</p>
+      <label>Subject<input name="subject" maxlength="120" placeholder="What is this about?" required /></label>
+      <label>Message<textarea name="message" maxlength="2000" rows="5" placeholder="What happened, and what did you expect instead?" required></textarea></label>
+      <p class="support-privacy">Your name and email come from your account. Please leave out passwords and anything about your health you do not need us to see.</p>
+      <p class="form-error" id="supportError" role="alert"></p>
+      <p class="contact-success" id="supportSuccess" role="status" hidden></p>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-close-support>Cancel</button><button type="submit" class="primary-button" id="supportSubmit">Send message</button></div>
+    </form>
+  </dialog>
   <dialog id="inviteDialog" aria-label="Invite a client">
     <form class="modal-card" id="inviteForm">
       <button class="modal-close" type="button" aria-label="Close">×</button>

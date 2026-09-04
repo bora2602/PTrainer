@@ -9,9 +9,13 @@ const PUBLIC = [
 ];
 
 // Reachable without a session on purpose; they must not leak account data.
+// /api/contact is here rather than under PROTECTED because somebody who cannot
+// sign in is exactly who most needs to reach support; what it must never do is
+// answer with an account.
 const AUTH_ENDPOINTS = [
   ['POST', '/api/auth/login'], ['POST', '/api/auth/register'],
-  ['POST', '/api/auth/forgot-password'], ['POST', '/api/auth/reset-password']
+  ['POST', '/api/auth/forgot-password'], ['POST', '/api/auth/reset-password'],
+  ['POST', '/api/contact']
 ];
 
 const PROTECTED = [
