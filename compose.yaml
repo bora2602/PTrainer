@@ -51,6 +51,7 @@ services:
       EMAIL_HTTP_URL: ${EMAIL_HTTP_URL:-}
       EMAIL_HTTP_TOKEN: ${EMAIL_HTTP_TOKEN:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
+      CONTACT_EMAIL_TO: ${CONTACT_EMAIL_TO:-}
       FOOD_API_USER_AGENT: ${FOOD_API_USER_AGENT:-Ptrainer/0.1 (https://github.com/bora2602/PTrainer)}
     ports:
       - "127.0.0.1:4173:4173"

@@ -67,6 +67,74 @@
         </form>
       </div>
     </div>
+    <!-- FAQ. To edit, add or remove a question, copy one .faq-item block and
+         change the text: the ids only have to be unique and match between the
+         button's aria-controls and the panel. No JavaScript change is needed —
+         the accordion binds to every .faq-item it finds. -->
+    <section class="landing-section" id="faq" aria-labelledby="faqHeading">
+      <div class="landing-heading">
+        <p class="eyebrow">COMMON QUESTIONS</p>
+        <h2 id="faqHeading">Questions, answered</h2>
+        <p>What trainers and clients ask most before they start.</p>
+      </div>
+      <div class="faq-list">
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ1" aria-expanded="false" aria-controls="faqA1"><span>Who is Ptrainer for?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA1" role="region" aria-labelledby="faqQ1"><div><p>Personal trainers who write programs for their clients, and the clients following them. A trainer builds reusable workout templates, assigns them, and reviews what came back. A client logs sets, weight, and meals from their phone.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ2" aria-expanded="false" aria-controls="faqA2"><span>How do a trainer and a client get connected?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA2" role="region" aria-labelledby="faqQ2"><div><p>The trainer sends an invitation to the client's email address. Nothing is shared until the client accepts, and either side can end the connection later. Ending it stops all future access to each other's records.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ3" aria-expanded="false" aria-controls="faqA3"><span>Does it work on a phone?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA3" role="region" aria-labelledby="faqQ3"><div><p>Yes. Ptrainer runs in the browser on any device, and the workout logger is built to be used one-handed between sets. There is no app to install.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ4" aria-expanded="false" aria-controls="faqA4"><span>Who can see my progress and nutrition entries?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA4" role="region" aria-labelledby="faqQ4"><div><p>You, and only the coach you have actively connected to — and only for the categories you switch on. Measurements and the meal journal are private by default; you grant them in Settings and can withdraw them at any time. Coaching notes a trainer writes stay private to that trainer unless they choose to share one.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ5" aria-expanded="false" aria-controls="faqA5"><span>Is Ptrainer a medical or health service?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA5" role="region" aria-labelledby="faqQ5"><div><p>No. Ptrainer is a coaching and tracking tool. It does not diagnose, treat, or give medical advice, and it is not an emergency service or a medical record system. Add only what your coaching actually needs, and speak to a qualified professional about anything clinical.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ6" aria-expanded="false" aria-controls="faqA6"><span>Can I get my data out, or delete it?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA6" role="region" aria-labelledby="faqQ6"><div><p>Both, from Settings. Export downloads a machine-readable copy of your account data and your recorded consent. Deleting your account ends access, withdraws that consent, and removes your profile, measurements, meal journal, logs and messages.</p></div></div>
+        </article>
+        <article class="faq-item">
+          <h3><button class="faq-question" type="button" id="faqQ7" aria-expanded="false" aria-controls="faqA7"><span>What does it cost?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
+          <div class="faq-answer" id="faqA7" role="region" aria-labelledby="faqQ7"><div><p>Creating an account and evaluating the core coaching tools is free. Paid plans are listed under Subscription once you are signed in. Ptrainer is currently a controlled pilot, so checkout runs in test mode and no real payment is taken.</p></div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-section" id="contact" aria-labelledby="contactHeading">
+      <div class="landing-heading">
+        <p class="eyebrow">GET IN TOUCH</p>
+        <h2 id="contactHeading">Send us a message</h2>
+        <p>Questions about coaching with Ptrainer, access requests, or anything that looks broken.</p>
+      </div>
+      <form id="contactForm" class="contact-form" novalidate>
+        <div class="contact-pair">
+          <label for="contactName">Full name<input id="contactName" name="name" type="text" maxlength="80" autocomplete="name" required /></label>
+          <label for="contactEmail">Email address<input id="contactEmail" name="email" type="email" maxlength="254" autocomplete="email" required /></label>
+        </div>
+        <label for="contactSubject">Subject<input id="contactSubject" name="subject" type="text" maxlength="120" required /></label>
+        <label for="contactMessage">Message<textarea id="contactMessage" name="message" rows="5" maxlength="2000" required placeholder="How can we help?"></textarea></label>
+        <!-- Honeypot: hidden from people, tempting to a form-filling bot. A
+             submission that fills it is accepted and discarded, so the bot
+             learns nothing from the response. -->
+        <div class="contact-trap" aria-hidden="true"><label for="contactCompany">Company</label><input id="contactCompany" name="company" type="text" tabindex="-1" autocomplete="off" /></div>
+        <p class="form-error" id="contactError" role="alert"></p>
+        <p class="contact-success" id="contactSuccess" role="status" hidden></p>
+        <div class="contact-actions">
+          <button class="primary-button" id="contactSubmit" type="submit">Send message</button>
+          <small>We use your address to reply, nothing else.</small>
+        </div>
+      </form>
+    </section>
+
     <div class="auth-legal">Ptrainer is a coaching tool, not medical advice. <button type="button" data-open-privacy>Privacy</button><span>·</span><button type="button" data-open-terms>Terms</button></div>
   </section>
 

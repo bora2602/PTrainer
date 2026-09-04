@@ -62,6 +62,10 @@ const PRIVACY_NOTICE_VERSION = '2026-08-21';
 const PRIVACY_ORGANIZATION = String(process.env.PRIVACY_ORGANIZATION || 'Ptrainer controlled pilot');
 const PRIVACY_CONTACT_EMAIL = String(process.env.PRIVACY_CONTACT_EMAIL || 'privacy@ptrainer.local');
 const DATA_STORAGE_REGION = String(process.env.DATA_STORAGE_REGION || 'Local development device');
+// Where the public contact form delivers. It falls back to the privacy contact
+// so a deployment that has configured one address is never silently dropping
+// messages into nowhere; production already refuses to start without that.
+const CONTACT_EMAIL_TO = String(process.env.CONTACT_EMAIL_TO || PRIVACY_CONTACT_EMAIL);
 const FOOD_API_USER_AGENT = process.env.FOOD_API_USER_AGENT || 'Ptrainer/0.1 (https://github.com/bora2602/PTrainer)';
 if(IS_PRODUCTION&&(!process.env.DATABASE_URL||!APP_ORIGIN.startsWith('https://')||String(process.env.METRICS_TOKEN||'').length<32||PRIVACY_ORGANIZATION==='Ptrainer controlled pilot'||!PRIVACY_CONTACT_EMAIL.includes('@')||PRIVACY_CONTACT_EMAIL.endsWith('.local')||DATA_STORAGE_REGION==='Local development device'))throw new Error('Production requires database, HTTPS, metrics, privacy-organization/contact, and storage-region configuration.');
 // A verification or reset link written to a log file is not delivery, and
@@ -498,6 +502,46 @@ async function api(req,res,url){
   let session=await getSession(req,res);
   if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION})}
   if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
+  // Public contact form. Unauthenticated on purpose - somebody who cannot sign
+  // in is exactly who most needs to reach us - so it carries its own limits:
+  // the shared CSRF/origin check, a per-address and per-IP rate limit, a
+  // honeypot, and a minimum fill time. The message body is never logged.
+  if(req.method==='POST'&&url.pathname==='/api/contact'){
+    if(!mutationAllowed(req,res,session))return;
+    const body=await readJson(req,res);if(!body)return;
+    const email=cleanEmail(body.email),name=String(body.name||'').trim(),subject=String(body.subject||'').trim(),message=String(body.message||'').trim();
+    if(!validName(name))return json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2-80 characters.',field:'name'}});
+    if(!validEmail(email))return json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address so we can reply.',field:'email'}});
+    if(subject.length<2||subject.length>120)return json(res,422,{error:{code:'SUBJECT_INVALID',message:'Subject must be 2-120 characters.',field:'subject'}});
+    if(message.length<10||message.length>2000)return json(res,422,{error:{code:'MESSAGE_INVALID',message:'Message must be 10-2000 characters.',field:'message'}});
+    // Two silent filters. A bot that fills the hidden field, or submits faster
+    // than anybody could type the form, gets the same 202 a person gets: an
+    // error would tell it which signal to stop tripping.
+    const trapped=String(body.company||'').trim().length>0;
+    // A missing timing counts as too fast rather than as absent: the form always
+    // sends one, so the requests that omit it are the scripted posts this is for.
+    const elapsed=Number(body.elapsedMs);
+    const tooFast=!Number.isFinite(elapsed)||elapsed<2500;
+    if(trapped||tooFast){
+      log('info','contact_message_discarded',{reason:trapped?'honeypot':'too_fast'});
+      return json(res,202,{message:'Thanks - your message has been sent.'});
+    }
+    if(!rateLimit(`contact:${clientIp(req)}`,5,3600000)||!rateLimit(`contact-address:${email}`,3,3600000))
+      return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages sent from here. Try again later.'}});
+    const delivery=await sendEmail({
+      to:CONTACT_EMAIL_TO,
+      subject:`Ptrainer contact: ${subject}`,
+      text:`${name} <${email}> sent this through the Ptrainer contact form.\n\nSubject: ${subject}\n\n${message}\n\nReply to ${email}.\n`
+    },log);
+    if(!delivery.delivered){
+      // Mail is a non-critical dependency everywhere else in the app, but here
+      // it IS the feature: reporting success on a failed send would lose the
+      // message silently, so the sender is told and given the address instead.
+      return json(res,502,{error:{code:'CONTACT_UNDELIVERABLE',message:`We could not send that just now. Please email ${CONTACT_EMAIL_TO} directly.`}});
+    }
+    log('info','contact_message_sent',{subjectLength:subject.length});
+    return json(res,202,{message:'Thanks - your message has been sent.'});
+  }
   if(await authApi(req,res,url,session))return;
   const user=await authenticated(res,session);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/food-products'){

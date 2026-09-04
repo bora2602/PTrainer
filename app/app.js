@@ -563,3 +563,69 @@ async function loadTemplates(){try{const result=await api('/api/workout-template
 async function assignTemplate(templateId,button){const client=selectedClient();if(!client)return showToast('Connect a trainee before assigning');const startDate=$('#assignStart').value||new Date().toISOString().slice(0,10),frequency=$('#assignFrequency').value,endDate=$('#assignEnd').value;setBusy(button,true,'Assigning…');try{const result=await api('/api/assigned-workouts',{method:'POST',body:JSON.stringify({templateId,traineeIds:[client.id],startDate,frequency,...(endDate?{endDate}:{})})});const count=result.assignments?.length||1;showToast(count>1?`${count} sessions assigned to ${client.name}`:`Workout assigned to ${client.name}`);await Promise.all([loadDashboard(),loadAssignments()])}catch(error){showToast(error.message)}finally{setBusy(button,false)}}
 $('#templateForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),rows=$$('.builder-exercise');$('#templateError').textContent='';const exercises=rows.map(row=>({name:row.querySelector('[name="exerciseName"]').value,sets:Number(row.querySelector('[name="sets"]').value),reps:Number(row.querySelector('[name="reps"]').value),restSeconds:Number(row.querySelector('[name="rest"]').value)}));setBusy(button,true,'Saving…');try{await api('/api/workout-templates',{method:'POST',body:JSON.stringify({name:new FormData(form).get('name'),description:new FormData(form).get('description'),exercises})});form.reset();$('#builderExercises').innerHTML='';addBuilderExercise();showToast('Workout template saved');await loadTemplates()}catch(error){$('#templateError').textContent=error.message}finally{setBusy(button,false)}});
 addBuilderExercise();initialize();
+
+// ── FAQ accordion ────────────────────────────────────────────────────────────
+// Binds to whatever .faq-item blocks exist in the markup, so adding a question
+// is an HTML edit alone. One answer stays open at a time: on a page whose job
+// is to be scanned, two open answers push the rest of the list off the screen.
+$$('.faq-item').forEach(item=>{
+  const question=item.querySelector('.faq-question');
+  if(!question)return;
+  question.addEventListener('click',()=>{
+    const opening=question.getAttribute('aria-expanded')!=='true';
+    $$('.faq-item.open').forEach(open=>{open.classList.remove('open');open.querySelector('.faq-question')?.setAttribute('aria-expanded','false')});
+    item.classList.toggle('open',opening);
+    question.setAttribute('aria-expanded',String(opening));
+  });
+});
+
+// ── Contact form ─────────────────────────────────────────────────────────────
+// Validation runs here for the immediate message and again on the server, which
+// is the copy that decides. The form is marked novalidate so these messages
+// appear in the page's own voice rather than the browser's bubble.
+const contactForm=$('#contactForm');
+if(contactForm){
+  const contactError=$('#contactError'),contactSuccess=$('#contactSuccess'),contactButton=$('#contactSubmit');
+  // Deliberately permissive: the address is checked properly by delivery, and a
+  // clever pattern here only ever rejects somebody's real address.
+  const looksLikeEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+  const loadedAt=Date.now();
+  const failValidation=(field,message)=>{
+    contactError.textContent=message;
+    field.setAttribute('aria-invalid','true');
+    field.focus();
+    return null;
+  };
+  const readContact=()=>{
+    const fields={name:$('#contactName'),email:$('#contactEmail'),subject:$('#contactSubject'),message:$('#contactMessage')};
+    Object.values(fields).forEach(field=>field.removeAttribute('aria-invalid'));
+    const values=Object.fromEntries(Object.entries(fields).map(([key,field])=>[key,field.value.trim()]));
+    if(values.name.length<2)return failValidation(fields.name,'Enter your full name.');
+    if(!looksLikeEmail(values.email))return failValidation(fields.email,'Enter a valid email address so we can reply.');
+    if(values.subject.length<2)return failValidation(fields.subject,'Add a short subject.');
+    if(values.message.length<10)return failValidation(fields.message,'Tell us a little more — at least 10 characters.');
+    return values;
+  };
+  contactForm.addEventListener('submit',async event=>{
+    event.preventDefault();
+    // The button is disabled for the whole request, so a second click during a
+    // slow send cannot post the message twice.
+    if(contactButton.disabled)return;
+    contactError.textContent='';
+    contactSuccess.hidden=true;
+    const values=readContact();
+    if(!values)return;
+    setBusy(contactButton,true,'Sending…');
+    try{
+      await api('/api/contact',{method:'POST',body:JSON.stringify({...values,company:$('#contactCompany').value,elapsedMs:Date.now()-loadedAt})});
+      contactForm.reset();
+      contactSuccess.textContent='Thanks — your message is on its way. We reply to the address you gave us.';
+      contactSuccess.hidden=false;
+      showToast('Message sent');
+    }catch(error){
+      contactError.textContent=error.message;
+    }finally{
+      setBusy(contactButton,false);
+    }
+  });
+}

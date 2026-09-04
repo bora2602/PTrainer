@@ -139,3 +139,72 @@ html[data-theme="light"] .calendar-grid th{background:transparent;color:var(--co
 html[data-theme="light"] .calendar-day.selected{border-width:2px;border-color:var(--color-accent);background:var(--color-accent-weak)}
 @media(max-width:980px){.calendar-layout{grid-template-columns:1fr}.calendar-day-list{max-height:none}}
 @media(max-width:520px){.calendar-grid td{padding:2px}.calendar-day{min-height:52px;padding:6px 5px;gap:4px}.calendar-day-number{font-size:11px}.calendar-day-dots i{width:6px;height:6px}.calendar-controls{width:100%}.calendar-controls button{flex:1}.calendar-entry{grid-template-columns:1fr auto}.calendar-entry button{grid-column:1/-1}}
+
+/* ── Landing sections: FAQ and contact ─────────────────────────────────────
+   These sit below the sign-in fold on the entry canvas, so they inherit the
+   auth screen's ground rather than introducing a surface of their own. */
+.landing-section{max-width:1240px;margin:0 auto;padding:var(--space-xl) 0 0}
+.landing-heading{max-width:640px;margin:0 0 var(--space-lg)}
+.landing-heading h2{font-weight:400;font-size:clamp(24px,3vw,32px);line-height:1.15;font-family:var(--font-body);letter-spacing:-1px;margin:8px 0 8px}
+.landing-heading p:not(.eyebrow){color:var(--color-ink-2);font-size:14px;line-height:1.6;margin:0}
+
+.faq-list{display:grid;gap:8px;max-width:860px}
+.faq-item{background:var(--scrim);border:1px solid var(--color-rule);border-radius:var(--radius-card);overflow:hidden}
+.faq-item h3{margin:0;font-size:inherit;font-weight:inherit}
+.faq-question{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;
+  border:0;background:transparent;color:var(--color-ink);text-align:left;cursor:pointer;
+  padding:16px 18px;font-family:inherit;font-size:14px;font-weight:700;line-height:1.4;
+  min-height:52px;transition:background var(--dur-micro) var(--ease-out)}
+.faq-question:hover{background:var(--color-accent-weak)}
+.faq-question:focus-visible{outline:2px solid var(--color-focus);outline-offset:-2px}
+.faq-item.open .faq-question{color:var(--color-accent)}
+
+/* The indicator is drawn from two bars: the vertical one rotates away on open,
+   turning the plus into a minus. Shape carries the state, not colour alone. */
+.faq-indicator{position:relative;flex:0 0 auto;width:14px;height:14px}
+.faq-indicator::before,.faq-indicator::after{content:"";position:absolute;left:0;top:6px;width:14px;height:2px;
+  border-radius:1px;background:currentColor;transition:transform var(--dur-short) var(--ease-out)}
+.faq-indicator::after{transform:rotate(90deg)}
+.faq-item.open .faq-indicator::after{transform:rotate(0deg)}
+
+/* Height animates through grid-template-rows, which needs no measured pixel
+   value and so survives a text reflow at any width. Visibility flips only
+   after the collapse finishes, keeping closed answers out of the tab order
+   and out of the accessibility tree. */
+.faq-answer{display:grid;grid-template-rows:0fr;visibility:hidden;
+  transition:grid-template-rows var(--dur-short) var(--ease-out),visibility 0s linear var(--dur-short)}
+.faq-item.open .faq-answer{grid-template-rows:1fr;visibility:visible;
+  transition:grid-template-rows var(--dur-short) var(--ease-out),visibility 0s}
+.faq-answer>div{overflow:hidden}
+.faq-answer p{margin:0;padding:0 18px 17px;color:var(--color-ink-2);font-size:13px;line-height:1.65;max-width:74ch}
+
+.contact-form{background:var(--scrim);border:1px solid var(--color-rule-2);border-radius:var(--radius-card);
+  box-shadow:var(--shadow-card);padding:22px;display:grid;gap:14px;max-width:860px}
+.contact-pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.contact-form label{display:grid;gap:7px;font-size:11px;font-weight:750;color:var(--color-ink)}
+.contact-form input,.contact-form textarea{width:100%;border:1px solid var(--color-rule-2);border-radius:var(--radius-input);
+  padding:11px 12px;font-size:13px;font-family:inherit;line-height:1.5;background:var(--color-paper-2);color:var(--color-ink)}
+.contact-form textarea{resize:vertical;min-height:110px}
+.contact-form input:focus,.contact-form textarea:focus{outline:2px solid var(--color-focus);outline-offset:0;border-color:transparent}
+.contact-form input[aria-invalid="true"],.contact-form textarea[aria-invalid="true"]{border-color:var(--color-critical)}
+.contact-trap{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.contact-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.contact-actions .primary-button{min-height:44px;padding:12px 22px}
+.contact-actions small{color:var(--color-muted);font-size:10px}
+.contact-success{margin:0;display:flex;align-items:flex-start;gap:9px;background:var(--color-positive-weak);
+  color:var(--color-positive);border-radius:var(--radius-input);padding:11px 13px;font-size:12px;line-height:1.55;font-weight:700}
+
+html[data-theme="light"] .faq-item,html[data-theme="light"] .contact-form{background:var(--color-paper-2)}
+
+/* The sign-in fold no longer ends the page, so the legal line stops floating
+   at the viewport bottom and closes the document instead. */
+.auth-legal{position:static;margin-top:var(--space-xl);padding-top:var(--space-md);border-top:1px solid var(--color-rule)}
+.auth-layout{min-height:auto;padding-block:clamp(30px,7vh,70px)}
+
+@media(max-width:720px){.contact-pair{grid-template-columns:1fr}}
+@media(max-width:600px){.landing-section{padding-top:var(--space-lg)}.contact-form{padding:17px}.faq-question{padding:14px 15px;font-size:13px}.faq-answer p{padding:0 15px 14px}}
+
+@media(prefers-reduced-motion:reduce){
+  .faq-answer,.faq-item.open .faq-answer{transition:visibility 0s}
+  .faq-indicator::before,.faq-indicator::after{transition:none}
+}
