@@ -12,8 +12,9 @@ Starts the whole stack and opens `http://127.0.0.1:4173` in your browser once
 the app answers. It opens that local address whether or not the Cloudflare
 tunnel came up, so a tunnel problem never costs you the app on this machine.
 
-- `--local` skips the tunnel entirely and starts local-only, which is also the
-  fastest way in — nothing waits on Cloudflare.
+- Local-only is the default: the Cloudflare tunnel sits behind a compose
+  profile, so nothing is published until you ask. `--public` turns it on.
+  (`--local` is still accepted and now does nothing.)
 - `--no-open` skips the tab.
 - Any other flag goes straight through to compose.
 
@@ -31,8 +32,15 @@ Demo accounts:
 
 ## Hosting it from one computer
 
-`docker compose up --build` starts Postgres, the app, and a Cloudflare Tunnel,
-then prints the public address people should use:
+`docker compose up --build` starts Postgres and the app on this machine only —
+both bind to `127.0.0.1`, so nothing is reachable from outside. Publishing is
+opt-in, and worth reading "Before you publish" below before you do it:
+
+```
+docker compose --profile tunnel up -d --build
+```
+
+That prints the public address people should use:
 
 ```
 ======================================================================
@@ -46,9 +54,27 @@ No router port is opened — the tunnel dials out. Data lives in a named Docker
 volume and survives `docker compose down` and rebuilds; inspect it with
 `node scripts/db.mjs`.
 
-**Set `NODE_ENV=production` in `.env` before sharing the address.** Otherwise
-the seeded demo accounts stay enabled and their passwords are published in this
-repository. See [the hosting runbook](docs/hosting-on-one-computer.md) for a
+### Before you publish
+
+**Set `NODE_ENV=production` in `.env` before sharing the address.** Development
+mode is not merely "less strict" — it is unsafe to expose, in ways that are easy
+to miss:
+
+- `POST /api/auth/forgot-password` returns the password-reset token **in the
+  response body**. Anyone who knows a registered email address can take over
+  that account. Email verification tokens leak the same way.
+- The seeded demo accounts are enabled and their passwords are in this
+  repository, so anyone with the link can sign in and read the seeded data.
+- The sign-in rate limit is 5000 per 15 minutes instead of 8, so passwords can
+  be brute-forced.
+- The session cookie is issued without the `Secure` flag.
+- The `/api/test/*` helper endpoints are mounted.
+
+Production mode closes all of these, and refuses to start until the rest of the
+configuration is real — database, `https://` origin, metrics token, privacy
+contact, storage region, and a mail transport that actually delivers. It also
+needs a **stable** `APP_ORIGIN`, which a quick tunnel cannot give you: use a
+named tunnel. See [the hosting runbook](docs/hosting-on-one-computer.md) for a
 fixed hostname, database inspection, and how to verify the lockdown.
 
 That printed `*.trycloudflare.com` address is random, changes on every restart,
