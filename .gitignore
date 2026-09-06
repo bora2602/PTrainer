@@ -11,3 +11,8 @@ work/rendered_v2/
 package-lock.json
 /backups/
 .claude/settings.local.json
+
+# Generated knowledge graph (rebuild with: pnpm --dir app run graph)
+graphify-out/
+.graph-build/
+graphify-out.previous/
