@@ -9,6 +9,7 @@ import { exerciseCatalog } from './exercise-catalog.mjs';
 import { lookupFoodProduct, normalizeBarcode, searchFoodsByName, normalizeFoodQuery } from './food-lookup.mjs';
 import { sendEmail, emailTransport, emailConfigProblem, verificationEmail, resetEmail, invitationEmail } from './email.mjs';
 import { startRetentionSweeps, runRetentionSweep } from './retention.mjs';
+import { buildCalendar } from './calendar-feed.mjs';
 import { BoundedMap } from './bounded-map.mjs';
 import { reportError, shouldReport, errorReportingEnabled, errorReportingProblem } from './observability.mjs';
 import {
@@ -211,6 +212,48 @@ async function logAccess(user,assignment,writing=false){
   // not, and needs their say-so.
   return !writing||relationshipPermissions(relationship).log_on_behalf;
 }
+// What the exported calendar contains, for either role.
+//
+// Three things about this are deliberate. The owner column comes from the role
+// and never from the request, the same rule the assigned-workouts list follows.
+// A trainer sees only clients they are actively coaching, so ending a
+// relationship removes those days from the trainer's calendar on the next
+// refresh rather than leaving a standing copy. And the row carries a name and a
+// date and nothing else: the feed URL is a bearer credential, and a subscribed
+// calendar is often shared onward, so sets, reps, loads and the exercise list
+// stay in the app where the authorization checks are.
+const CALENDAR_FEED_PAST_DAYS=90,CALENDAR_FEED_FUTURE_DAYS=365,CALENDAR_FEED_MAX_EVENTS=2000;
+const shiftDate=(text,days)=>new Date(Date.parse(`${text}T00:00:00.000Z`)+days*86400000).toISOString().slice(0,10);
+async function calendarEventsFor(user){
+  const zone=await query('SELECT timezone FROM user_profiles WHERE user_id=$1',[user.id]);
+  const today=todayIn(zone.rows[0]?.timezone||'UTC');
+  const from=shiftDate(today,-CALENDAR_FEED_PAST_DAYS),to=shiftDate(today,CALENDAR_FEED_FUTURE_DAYS);
+  if(user.role==='TRAINER'){
+    const traineeIds=await activeTraineeIds(user.id);
+    if(!traineeIds.length)return{calendarName:'Ptrainer coaching schedule',events:[]};
+    const result=await query(`SELECT a.id,to_char(a.due_date,'YYYY-MM-DD') AS due_date,a.template_snapshot->>'name' AS name,a.updated_at,u.name AS trainee_name FROM assigned_workouts a JOIN users u ON u.id=a.trainee_id WHERE a.trainer_id=$1 AND a.trainee_id = ANY($2) AND a.deleted_at IS NULL AND a.due_date IS NOT NULL AND a.status<>'ARCHIVED' AND a.due_date >= $3 AND a.due_date <= $4 ORDER BY a.due_date LIMIT ${CALENDAR_FEED_MAX_EVENTS}`,[user.id,traineeIds,from,to]);
+    return{calendarName:'Ptrainer coaching schedule',events:result.rows.map(row=>({id:row.id,date:row.due_date,title:`${row.trainee_name} · ${row.name||'Workout'}`,updatedAt:row.updated_at}))};
+  }
+  const result=await query(`SELECT id,to_char(due_date,'YYYY-MM-DD') AS due_date,template_snapshot->>'name' AS name,updated_at FROM assigned_workouts WHERE trainee_id=$1 AND deleted_at IS NULL AND due_date IS NOT NULL AND status<>'ARCHIVED' AND due_date >= $2 AND due_date <= $3 ORDER BY due_date LIMIT ${CALENDAR_FEED_MAX_EVENTS}`,[user.id,from,to]);
+  return{calendarName:'Ptrainer workouts',events:result.rows.map(row=>({id:row.id,date:row.due_date,title:row.name||'Workout',updatedAt:row.updated_at}))};
+}
+async function calendarDocument(user,origin){
+  const{calendarName,events}=await calendarEventsFor(user);
+  return buildCalendar({calendarName,events,origin});
+}
+// The feed URL is the credential, so only its digest is stored and the full URL
+// is shown once, at the moment it is issued. The fingerprint is the first few
+// characters of the token: not secret, and enough for somebody to recognise
+// which link is live without the link being displayed again.
+const CALENDAR_TOKEN_PREFIX='cal_';
+// A subscribed client polls forever. Recording every poll would make a read into
+// a write, so the row is touched at most hourly - the same bargain the session
+// table makes with last_seen.
+const CALENDAR_FEED_TOUCH_INTERVAL_MS=60*60*1000;
+const calendarFingerprint=token=>String(token).slice(0,12);
+const feedOrigin=req=>APP_ORIGIN||`http://${req.headers.host||'localhost'}`;
+const feedUrlFor=(origin,token)=>`${origin.replace(/\/+$/,'')}/api/calendar/${token}.ics`;
+
 const progressMetrics=new Map();
 // Account mail carries the only route back into a locked-out account, so a
 // verification token is stored as a hash and checked against the address it was
@@ -240,7 +283,11 @@ const log=(level,event,fields={})=>{
   // says are worth alerting on, and only when a collector is configured.
   if(shouldReport(level,event))reportError(event,{level,...fields});
 };
-const routeLabel=path=>String(path||'/').replace(/^\/api\/invitations\/[^/]+\/accept$/,'/api/invitations/:token/accept').replace(/^\/api\/assigned-workouts\/[^/]+\/logs$/,'/api/assigned-workouts/:id/logs').replace(/^\/api\/assigned-workouts\/[^/]+$/,'/api/assigned-workouts/:id').replace(/^\/api\/food-products\/[^/]+$/,'/api/food-products/:barcode').replace(/^\/api\/nutrition-entries\/[^/]+$/,'/api/nutrition-entries/:id').replace(/^\/api\/notifications\/[^/]+\/read$/,'/api/notifications/:id/read').replace(/^\/api\/relationships\/[^/]+\/[^/]+$/,'/api/relationships/:trainerId/:traineeId').replace(/^\/api\/exercises\/[^/]+$/,'/api/exercises/:id').replace(/^\/api\/workout-templates\/[^/]+\/duplicate$/,'/api/workout-templates/:id/duplicate').replace(/^\/api\/workout-templates\/[^/]+$/,'/api/workout-templates/:id').replace(/^\/api\/progress-entries\/[^/]+$/,'/api/progress-entries/:id').replace(/^\/api\/trainer-notes\/[^/]+$/,'/api/trainer-notes/:id');
+// The path segments collapsed here are identifiers, with one exception: the
+// calendar feed carries its credential in the URL, and a subscribed client asks
+// for it on a schedule forever. Collapsing it first is what keeps that token out
+// of every request log line.
+const routeLabel=path=>String(path||'/').replace(/^\/api\/calendar\/[^/]+$/,'/api/calendar/:token.ics').replace(/^\/api\/invitations\/[^/]+\/accept$/,'/api/invitations/:token/accept').replace(/^\/api\/assigned-workouts\/[^/]+\/logs$/,'/api/assigned-workouts/:id/logs').replace(/^\/api\/assigned-workouts\/[^/]+$/,'/api/assigned-workouts/:id').replace(/^\/api\/food-products\/[^/]+$/,'/api/food-products/:barcode').replace(/^\/api\/nutrition-entries\/[^/]+$/,'/api/nutrition-entries/:id').replace(/^\/api\/notifications\/[^/]+\/read$/,'/api/notifications/:id/read').replace(/^\/api\/relationships\/[^/]+\/[^/]+$/,'/api/relationships/:trainerId/:traineeId').replace(/^\/api\/exercises\/[^/]+$/,'/api/exercises/:id').replace(/^\/api\/workout-templates\/[^/]+\/duplicate$/,'/api/workout-templates/:id/duplicate').replace(/^\/api\/workout-templates\/[^/]+$/,'/api/workout-templates/:id').replace(/^\/api\/progress-entries\/[^/]+$/,'/api/progress-entries/:id').replace(/^\/api\/trainer-notes\/[^/]+$/,'/api/trainer-notes/:id');
 
 
 await initializeDatabase();
@@ -502,6 +549,37 @@ async function api(req,res,url){
   let session=await getSession(req,res);
   if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION})}
   if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
+  // The calendar feed is reachable without a session, and has to be: Google
+  // Calendar and Apple Calendar poll a URL: they cannot send a cookie, and they
+  // cannot send a CSRF token either. So the URL carries its own credential, and
+  // it is declared here, above the authentication gate, rather than being
+  // exempted from one further down. Being GET-only it never reaches
+  // mutationAllowed(), which is where the origin allow-list and CSRF check live.
+  //
+  // An unknown token answers 404 in plain text rather than the JSON error shape:
+  // the caller is a calendar client, not an API consumer, and a wrong link
+  // should look to it like a missing file.
+  const calendarFeedMatch=url.pathname.match(/^\/api\/calendar\/(cal_[A-Za-z0-9_-]{16,64})\.ics$/);
+  if((req.method==='GET'||req.method==='HEAD')&&calendarFeedMatch){
+    if(!rateLimit(`calendar-feed:${clientIp(req)}`,60,60000))return textResponse(res,429,'Too many calendar requests.\n');
+    const found=await query('SELECT token_hash,user_id,last_used_at FROM calendar_feed_tokens WHERE token_hash=$1 AND revoked_at IS NULL',[tokenDigest(calendarFeedMatch[1])]);
+    if(!found.rowCount){
+      // A tighter second bucket on failures only, so the token space cannot be
+      // walked by a caller that stays under the ordinary polling limit.
+      rateLimit(`calendar-feed-miss:${clientIp(req)}`,20,3600000);
+      return textResponse(res,404,'Calendar not found.\n');
+    }
+    const record=found.rows[0],owner=await findUserById(record.user_id);
+    // A suspended or deleted account keeps no live feed. The token row survives
+    // for the audit trail; it just stops answering.
+    if(!owner||owner.status!=='ACTIVE')return textResponse(res,404,'Calendar not found.\n');
+    const lastUsed=record.last_used_at?new Date(record.last_used_at).getTime():0;
+    if(Date.now()-lastUsed>CALENDAR_FEED_TOUCH_INTERVAL_MS)await query('UPDATE calendar_feed_tokens SET last_used_at=now() WHERE token_hash=$1',[record.token_hash]);
+    // No audit event: a poll is not a sensitive action, and one row per refresh
+    // per subscriber would bury the events that are. Issuing and revoking the
+    // link are what get audited.
+    return textResponse(res,200,await calendarDocument(owner,feedOrigin(req)),'text/calendar; charset=utf-8');
+  }
   // Contact and in-app support share one endpoint. It is reachable signed out,
   // on purpose - somebody who cannot sign in is exactly who most needs to reach
   // us - so an anonymous message carries its own limits: the shared CSRF/origin
@@ -606,6 +684,45 @@ async function api(req,res,url){
     await audit(user.id,'PERSONAL_DATA_EXPORTED','user',user.id);return json(res,200,{exportedAt:new Date().toISOString(),user:publicUser(user),profile:profile.rows[0]||null,relationships:connections.rows,assignedWorkouts:workouts.rows,authoredWorkoutLogs:logs.rows,authoredSetLogs:setRows.rows,progressEntries:progress.rows,nutritionEntries:nutrition.rows,nutritionTarget:nutritionTarget.rows[0]||null,authoredMessages:messages.rows,privacyConsents:privacyConsents.rows});
   }
   if(req.method==='GET'&&url.pathname==='/api/me/audit-events'){const result=await query('SELECT action,entity_type,entity_id,metadata,created_at FROM audit_events WHERE actor_id=$1 ORDER BY created_at DESC LIMIT 50',[user.id]);return json(res,200,{events:result.rows})}
+  // Managing the calendar link. The raw token is returned by exactly one of
+  // these, once, at the moment it is created - there is nowhere it could be read
+  // back from, because only its digest was kept.
+  if(req.method==='GET'&&url.pathname==='/api/me/calendar-feed'){
+    const found=await query('SELECT fingerprint,created_at,last_used_at FROM calendar_feed_tokens WHERE user_id=$1 AND revoked_at IS NULL',[user.id]);
+    const record=found.rows[0];
+    return json(res,200,{feed:record?{enabled:true,fingerprint:record.fingerprint,createdAt:record.created_at,lastUsedAt:record.last_used_at}:{enabled:false,fingerprint:null,createdAt:null,lastUsedAt:null}});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/me/calendar-feed'){
+    if(!mutationAllowed(req,res,session))return;
+    if(!rateLimit(`calendar-feed-issue:${user.id}`,5,3600000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many calendar links created. Try again later.'}});
+    const rawToken=`${CALENDAR_TOKEN_PREFIX}${randomBytes(24).toString('base64url')}`;
+    let replaced=0;
+    // Retiring the old link and creating the new one is one transaction, because
+    // the partial unique index means a half-done replacement leaves the person
+    // with no working link at all.
+    await transaction(async tx=>{
+      const revoked=await tx('UPDATE calendar_feed_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL RETURNING token_hash',[user.id]);
+      replaced=revoked.rowCount;
+      await tx('INSERT INTO calendar_feed_tokens(token_hash,user_id,fingerprint) VALUES($1,$2,$3)',[tokenDigest(rawToken),user.id,calendarFingerprint(rawToken)]);
+    });
+    await audit(user.id,'CALENDAR_FEED_ISSUED','user',user.id,{replaced});
+    const feedUrl=feedUrlFor(feedOrigin(req),rawToken);
+    // webcal:// is the same URL under a scheme iOS and macOS hand straight to
+    // Calendar, which turns subscribing on a phone into one tap.
+    return json(res,201,{feed:{enabled:true,fingerprint:calendarFingerprint(rawToken),createdAt:new Date().toISOString(),lastUsedAt:null},url:feedUrl,webcalUrl:feedUrl.replace(/^https?:/,'webcal:')});
+  }
+  if(req.method==='DELETE'&&url.pathname==='/api/me/calendar-feed'){
+    if(!mutationAllowed(req,res,session))return;
+    const revoked=await query('UPDATE calendar_feed_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL RETURNING token_hash',[user.id]);
+    if(revoked.rowCount)await audit(user.id,'CALENDAR_FEED_REVOKED','user',user.id,{revoked:revoked.rowCount});
+    return json(res,200,{feed:{enabled:false,fingerprint:null,createdAt:null,lastUsedAt:null}});
+  }
+  // The same calendar as a one-off file, for somebody who wants a change
+  // reflected now rather than whenever their calendar decides to poll.
+  if(req.method==='GET'&&url.pathname==='/api/me/calendar.ics'){
+    res.setHeader('Content-Disposition','attachment; filename="ptrainer-workouts.ics"');
+    return textResponse(res,200,await calendarDocument(user,feedOrigin(req)),'text/calendar; charset=utf-8');
+  }
   if(req.method==='DELETE'&&url.pathname==='/api/me/account'){
     if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));const purged={setLogs:0,workoutLogs:0,progressEntries:0,nutritionEntries:0,nutritionTargets:0,trainerNotes:0,messages:0,notifications:0,tokens:0};
     await transaction(async tx=>{
@@ -624,7 +741,11 @@ async function api(req,res,url){
       purged.notifications=(await tx('DELETE FROM notifications WHERE recipient_id=$1 RETURNING id',[user.id])).rowCount;
       const resets=await tx('DELETE FROM password_reset_tokens WHERE user_id=$1 RETURNING token_hash',[user.id]);
       const verifications=await tx('DELETE FROM email_verification_tokens WHERE user_id=$1 RETURNING token_hash',[user.id]);
-      purged.tokens=resets.rowCount+verifications.rowCount;
+      // Deletion anonymises the user row rather than removing it, so the foreign
+      // key never cascades. A calendar link left answering after the account is
+      // gone would be a feed nobody can reach the app to revoke.
+      const calendarFeeds=await tx('DELETE FROM calendar_feed_tokens WHERE user_id=$1 RETURNING token_hash',[user.id]);
+      purged.tokens=resets.rowCount+verifications.rowCount+calendarFeeds.rowCount;
       // Counts only. What was deleted is exactly what must not be copied into
       // the audit trail on the way out.
       await tx('INSERT INTO audit_events(id,actor_id,action,entity_type,entity_id,metadata) VALUES($1,$2,$3,$4,$5,$6)',[id('audit'),user.id,'ACCOUNT_DELETED','user',user.id,JSON.stringify(purged)]);

@@ -22,6 +22,7 @@ This document records which infrastructure concepts are appropriate for the curr
 | Food-name lookup | Authenticated, rate-limited (`60/min`) server search that answers from a bundled generic-food table first and adds Open Food Facts matches; the typed name is never logged, results are cached for 30 minutes, and an unreachable Open Food Facts degrades to reference foods only. Implausible crowd-sourced entries (calories that cannot be reconciled with their own macros) are dropped. The client auto-fills only while the macro fields still hold what a lookup wrote. |
 | Packaged-food lookup | Authenticated, rate-limited server proxy to Open Food Facts v3; only the barcode is sent, successful lookups are cached for six hours, and logged nutrition stores a product snapshot. Compatible browsers decode camera frames locally with the native Barcode Detector API; manual UPC/EAN/GTIN entry remains available. |
 | Calendar | A read-only month view of assignments that already exist. `GET /api/assigned-workouts` takes a `from`/`to` window, capped at a year, and still pages by cursor inside it; unscheduled work belongs to no window. Nothing is created or edited here - assigning stays in Workouts - so the view adds no writable surface, no new table and no third-party dependency. `DATE` columns are read back with `to_char` because node-postgres and PGlite disagree about what a bare date means, and a calendar that moves a workout a day is worse than no calendar. |
+| Calendar export | A subscribable ICS feed at `/api/calendar/:token.ics` that Google Calendar and Apple Calendar poll, plus a one-off `.ics` download at `/api/me/calendar.ics`. The feed is the only route that answers without a session, because a calendar client can send neither a cookie nor a CSRF token; the URL carries its own credential instead, stored as a digest, revocable, collapsed out of the request log, and carrying event names and dates only. Reasoning and the risks accepted are below. |
 | Monitoring and observability | `/healthz`, `/readyz`, protected production `/metrics`, request counts, error counts, latency average, database readiness, and audit events. |
 | CI/CD | Pull requests and `main` run migrations, API/security tests, and a container build. Version tags publish an immutable image to GitHub Container Registry. |
 | Deployment | Docker image, PostgreSQL Compose service, optional Caddy edge profile, environment validation, and graceful shutdown. |
@@ -74,28 +75,79 @@ than that phrase: a month view of assignments the MVP already creates, because
 already specified to show upcoming assignments. It reads data that existed
 before it and writes none.
 
-Three things named by that later-release line remain out, and each was
+**The export feed, and the risk that was accepted with it.** An iCal/webcal feed
+was declined here for a while, on the grounds that it needs a new revocable
+credential and that anyone holding the URL reads the workout names on it. That
+reading was right, and the maintainer has since taken the feature anyway,
+because a schedule a trainee cannot see beside the rest of their week is a
+schedule they work around rather than with. What shipped answers the original
+objection point by point rather than waiving it:
+
+- **The URL is a credential, so it is treated as one.** Only a SHA-256 digest of
+  the token is stored, exactly like invitation, reset and verification tokens; the
+  full URL is shown once, at the moment it is issued, and there is nowhere to read
+  it back from. One live link per person, enforced by a partial unique index.
+  Issuing and revoking are audited; a poll is not, because one audit row per
+  subscriber per refresh would bury the events that matter.
+- **The token never reaches a log.** `routeLabel()` collapses the path before the
+  request line is written. A subscribed client asks for that URL on a schedule
+  forever, so this is the difference between one secret and a permanent one.
+- **The events carry a name and a day and nothing else.** No description, no
+  exercise list, no sets, reps or loads. A calendar is often shared onward, and
+  the programming is the part that should stay behind an authorization check.
+- **A trainer's feed follows the relationship.** Only actively coached clients
+  appear, so ending a relationship empties those days on the next refresh.
+
+Two things named by the same later-release line remain out, and each was
 considered and declined rather than overlooked:
 
-- **An iCal/webcal feed or `.ics` download.** Calendar clients cannot send a
-  session cookie or a CSRF token, so a feed needs a separate revocable per-user
-  token, and anyone holding that URL reads the workout names on it. That is a new
-  credential and a new disclosure surface, not a rendering change.
 - **Google or Outlook calendar sync.** OAuth, a stored refresh token per user, a
   third runtime dependency, and personal health-adjacent data leaving the
-  deployment - which section 10 of the plan puts behind legal review.
+  deployment - which section 10 of the plan puts behind legal review. The
+  subscribable feed reaches both Google and Apple without any of that; what it
+  cannot do is control how often Google polls, which is commonly a day. The
+  one-off `.ics` download covers somebody who needs a change reflected now.
 - **Appointments and booking.** A different domain from workout assignment
   (availability, duration, cancellation, no-shows) with its own tables.
 
-Any of the three needs the plan updated first.
+Either of the two needs the plan updated first.
+
+## Where the pilot is hosted, and why
+
+The pilot runs on a single Always Free Arm VM in Oracle Cloud's Toronto region,
+using the `edge` compose profile: Caddy, the app, and PostgreSQL on one machine.
+Walkthrough in [hosting in the cloud](hosting-in-the-cloud.md).
+
+A managed platform would have been the lighter choice, and it was rejected for
+one reason: **no free managed tier has a Canadian region.** Render offers Oregon,
+Ohio, Virginia, Frankfurt and Singapore; Neon offers eight AWS regions, none of
+them Canadian. `DATA_STORAGE_REGION` is rendered into the privacy notice as a
+factual claim about where health-adjacent data lives, so the region is a product
+decision rather than an operational one, and section 10 of the plan puts this
+behind legal review before launch. Paying for the region with `apt upgrade` and
+self-managed backups was judged the better trade for a pilot. It is not lock-in:
+the stack is a compose file and a `pg_dump`.
+
+Two smaller decisions inside that one:
+
+- **A DNS name rather than the quick tunnel.** Let's Encrypt will not issue for a
+  bare IP, and a Cloudflare quick tunnel is issued a new random hostname on every
+  restart, which breaks `APP_ORIGIN` and every bookmark. A name that survives a
+  restart is the requirement; a free dynamic-DNS subdomain satisfies it.
+- **Mail is configured to satisfy the production startup check, not to deliver
+  invitations.** Invitations already work without it - the invite code is
+  returned to the trainer and shown in the UI. The check exists because a
+  verification link in a log file is not delivery. On a provider tier with no
+  verified domain this means password reset works for the operator and not yet
+  for testers, which is a known gap for the pilot rather than a finished state.
 
 ## Testing
 
 | Layer | What runs |
 |---|---|
-| Unit | `app/validation.test.mjs` via `node --test`. No server, no database. Covers password and date rules, unit conversion, set-row and schedule normalization, permission merging, and cursor encoding. |
+| Unit | `app/validation.test.mjs` and `app/calendar-feed.test.mjs` via `node --test`. No server, no database. Covers password and date rules, unit conversion, set-row and schedule normalization, permission merging, cursor encoding, and iCalendar escaping, folding and all-day date arithmetic. |
 | Static | `work/accessibility-check.mjs`. Every control named, every dialog named, chart text alternative, live regions, touch targets. Dependency-free on purpose; contrast, focus order and screen-reader phrasing still need a person. |
-| API | Six suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, calendar date windows, retention, and pagination. |
+| API | Seven suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, calendar date windows, the calendar export feed and its revocation, retention, and pagination. |
 | End to end | `work/e2e-coaching-journey.mjs` walks the plan's definition of done on accounts created during the run. |
 | Authorization probes | `work/endpoint-exposure-check.mjs` (nothing answers unauthenticated) and `work/cross-account-check.mjs` (no record is reachable by guessing an id). Both now run in CI. |
 

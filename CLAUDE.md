@@ -68,7 +68,8 @@ Tables: `users`, `sessions`, `user_profiles`, `trainer_trainee_relationships`,
 `workout_logs`, `set_logs`, `progress_metrics`, `progress_entries`,
 `nutrition_entries`, `nutrition_targets`, `trainer_notes`, `messages`,
 `notifications`, `audit_events`, `privacy_consents`, `password_reset_tokens`,
-`email_verification_tokens`, `subscriptions`, `schema_migrations`.
+`email_verification_tokens`, `calendar_feed_tokens`, `subscriptions`,
+`schema_migrations`.
 
 Two differences from the plan's §8 list, both intentional: `trainer_profiles`
 and `trainee_profiles` are one `user_profiles` table, because the role-specific
@@ -156,6 +157,70 @@ Match plan §13. When adding a feature, add tests at the layer where a regressio
 
 Any PR touching authorization logic must include a test that proves the *denied* case, not just the allowed case.
 
+## 8a. Code knowledge graph
+
+There is a queryable graph of this codebase in `graphify-out/` (gitignored, ~585
+nodes). Once it exists, **treat an architecture question as a graph query before
+reaching for grep** — but read the blind spots below before trusting an answer,
+because the graph's failure mode is a confident wrong number, not a blank.
+
+```bash
+python -m graphify explain  "accessibleTrainee"   # what is this, what touches it
+python -m graphify affected "relationshipPermissions"  # what breaks if I change this
+python -m graphify path     "server.mjs" "validation.mjs"   # how are these connected
+python -m graphify query    "how does a trainee log a workout"  # BFS, natural language
+python -m graphify god-nodes --top 10             # architectural hubs
+```
+
+**Rebuilding.** `pnpm --dir app run graph` (watch mode: `pnpm --dir app run
+graph:watch`, which rebuilds after 10s of quiet). Both call
+[scripts/graph-build.mjs](scripts/graph-build.mjs), which is the only supported
+way to rebuild. **Do not run `graphify extract` by hand and do not run `graphify
+hook install`.** The script owns the scope decision, passes `--code-only` on
+every extract (without it, graphify sends every doc in scope — the planning
+document, the privacy checklist — through a third-party LLM), pins
+`PYTHONHASHSEED` so clustering is reproducible, and refuses to publish a graph
+containing anything outside `app/`, `work/` and `scripts/`. A rejected build
+leaves the previous graph in place. Git hooks rebuild in the background after a
+commit that touched code in those directories, and after a branch switch;
+`GRAPHIFY_SKIP_HOOK=1` opts out.
+
+**What it knows.** All 27 `.mjs`/`.js` files across `app/`, `work/` and
+`scripts/`, as files, functions, classes and the `imports`/`calls` edges between
+them. The 18 SQL migrations are in too, as table nodes — so `users`,
+`workout_logs` and friends are real nodes (this needs `pip install
+"graphifyy[sql]"`; without that grammar the migrations extract to *nothing* and
+graphify only warns). Tests in `work/` are included deliberately: the
+`work/` → `app/` import edges are what make `affected` able to say a check will
+break.
+
+**What it is blind to.** These are measured, not hypothetical:
+
+- **Degree under-reports, silently.** `accessibleTrainee()` — the §3
+  authorization choke point — appears 10 times in `server.mjs` but the graph
+  reports `Degree: 4`, and `affected` returns 2 nodes. Route handlers live
+  inside one enormous `api()` function, so every route that calls it collapses
+  into a single `api() [calls]` edge. **Never read a low degree on an authz
+  helper as "safe to change"** — grep `server.mjs` for the call sites.
+- **The frontend is an island: `app/app.js` has zero edges to any other file.**
+  It is a classic script, not a module. The two largest hubs in the graph,
+  `server.mjs` (161) and `app.js` (123), have **no edge between them**, because
+  the real contract is `fetch('/api/...')`, not an import. The graph cannot
+  answer "what frontend code calls this endpoint".
+- **No JS↔SQL edges (zero).** SQL lives in template literals inside
+  `server.mjs`, invisible to the JS parser. The table nodes exist but nothing
+  connects to them, so "what touches the `users` table" is not answerable here.
+- **No markup or styles.** `index.html` (59KB) and all four stylesheets are
+  absent — and `tokens.css` is additionally skipped as "potentially sensitive"
+  on filename alone. Design-token and CSS-custom-property contracts are
+  invisible; a graph is the wrong instrument for asking how something looks.
+- **No cross-language edges.** `work/build_planning_doc.py` sits co-located with
+  the JS with zero edges to it. Name mirrors are not imports.
+- **No docs, by design.** `--code-only` keeps `docs/`, this file and the plan
+  document out. The graph knows the code's shape, never the product's rules.
+
+The graph is a map, not a drift check. Tests still are.
+
 ## 9. Build order (matches plan §16 backlog)
 
 1. Auth, roles, profiles
@@ -169,7 +234,11 @@ Any PR touching authorization logic must include a test that proves the *denied*
 
 Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. They are not to be extended, and the maintainer should either move them into scope in the plan document or record them as pilot-only extras — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
 
-The **calendar view** is a deliberate borderline case, resolved rather than drifted into: plan §2 lists "calendar and appointments" under later releases, but what shipped is only a read-only month view of assignments the MVP already creates — §2's MVP includes "assignment, scheduling" and §6 already specifies "upcoming assignments" on the trainer dashboard. It reads; it writes nothing. **An iCal/webcal feed, Google or Outlook sync, and appointment booking stay out** and need the plan updated first — the reasoning for each is in [docs/architecture-decisions.md](docs/architecture-decisions.md).
+The **calendar view** is a deliberate borderline case, resolved rather than drifted into: plan §2 lists "calendar and appointments" under later releases, but what shipped is only a read-only month view of assignments the MVP already creates — §2's MVP includes "assignment, scheduling" and §6 already specifies "upcoming assignments" on the trainer dashboard. It reads; it writes nothing.
+
+**Calendar export is in, by an explicit maintainer decision** that reversed an earlier "no": a subscribable ICS feed at `/api/calendar/:token.ics` for Google and Apple Calendar, plus a one-off `.ics` download. It is the only route in the application that answers without a session — a calendar client can send neither a cookie nor a CSRF token — so four rules travel with it and must not be relaxed: the token is stored only as a digest and shown once, `routeLabel()` keeps it out of the request log, events carry a name and a date and never sets/reps/loads/exercises, and a trainer's feed covers actively coached clients only. The plan document still needs its §2 line moved into MVP scope; that edit is the maintainer's.
+
+**Google or Outlook OAuth sync and appointment booking stay out** and need the plan updated first — the reasoning for each is in [docs/architecture-decisions.md](docs/architecture-decisions.md).
 
 ## 10. Definition of done for any MVP feature
 

@@ -1,4 +1,4 @@
-Add calendar entegration
+Add calendar entegration - export to google / apple calendar (done - subscribe link + .ics download in Settings; OAuth sync still out)
 Better backend protection
 Login experience optimization
 better sets / reps tracking
@@ -8,4 +8,8 @@ Login page description or text change -----> it should say something like The be
 Client/user message interface change for example add files, pictures and emojis 
 Mobile look improvement
 add pictures to chat
-We need to have FAQ part and submit an email section 
+We need to have FAQ part and submit an email section (done)
+
+
+
+layout:

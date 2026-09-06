@@ -10,6 +10,12 @@
 // correction, not a deletion: an invitation that can no longer be accepted was
 // still silently blocking the trainer from re-inviting that address.
 //
+// Calendar feed tokens are deliberately absent from this sweep. They are not
+// spent credentials: a subscribed calendar is meant to keep working for as long
+// as somebody wants it to, and a revoked one is kept so the person can still see
+// in Settings that the old link was retired. They go only when the owner
+// replaces them, revokes them, or deletes their account.
+//
 // Audit events are the one thing this module will not remove by default.
 // Retention periods for audit records are named in the privacy launch checklist
 // as requiring legal sign-off, so AUDIT_RETENTION_DAYS defaults to 0, meaning

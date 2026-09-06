@@ -47,6 +47,7 @@ Paginated: `progress-entries`, `nutrition-entries`, `messages`, `notifications`,
 | `GET /metrics` | Prometheus text. Requires `METRICS_TOKEN` in production. |
 | `GET /api/session` | Issues the CSRF token. Reports `demoMode`. |
 | `GET /api/privacy` | Notice version, operator, contact, storage region. |
+| `GET /api/calendar/:token.ics` | The subscribable workout calendar, as `text/calendar`. The only route that answers with a person's data and no session, because Google Calendar and Apple Calendar can send neither a cookie nor a CSRF token: the URL is itself the credential. Unknown, revoked, or belonging to a suspended account all answer `404` in plain text. Events carry a workout name and an all-day date and nothing else — no exercises, sets, reps or loads. Rate limited per address, with a tighter bucket on misses so the token space cannot be walked. |
 
 ### Authentication
 
@@ -66,6 +67,11 @@ Paginated: `progress-entries`, `nutrition-entries`, `messages`, `notifications`,
 `POST /api/me/resend-verification`, `GET /api/me/sessions` (fingerprints only —
 never the session identifier), `GET /api/me/audit-events`,
 `GET /api/me/export` (full personal-data export),
+`GET|POST|DELETE /api/me/calendar-feed` (the subscribable link: `GET` reports
+whether one is live and its `cal_…` fingerprint, `POST` mints one and returns the
+full URL **once** — only a digest is stored, and issuing retires any previous
+link — `DELETE` revokes it), `GET /api/me/calendar.ics` (the same calendar as a
+one-off download, behind the session rather than behind a feed token),
 `DELETE /api/me/account` (anonymizes identity **and** deletes measurements, meal
 journal, workout and set logs, coaching notes and notifications; returns the
 counts purged).
@@ -141,8 +147,8 @@ unauthenticated exposure probe covers them like any other route.
 ## Rate limits
 
 Registration, sign-in, password reset, invitations, messages, barcode and food
-lookups, progress writes, nutrition writes, workout-log writes, and verification
-resends are all limited. The limiter is process-local, so it is correct for one
+lookups, progress writes, nutrition writes, workout-log writes, verification
+resends, calendar-feed reads and calendar-link creation are all limited. The limiter is process-local, so it is correct for one
 application instance only. Registration and sign-in ceilings are relaxed outside
 production so the test suite can run repeatedly; production keeps the tight
 numbers.

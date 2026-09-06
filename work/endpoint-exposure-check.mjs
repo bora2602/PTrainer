@@ -40,7 +40,14 @@ const PROTECTED = [
   // an unauthenticated caller rather than being trusted to be harmless.
   ['POST', '/api/test/expire-invitation'], ['POST', '/api/test/retention-sweep'],
   ['GET', '/api/test/health-data-count'],
-  ['POST', '/api/auth/logout-others'], ['GET', '/api/me/sessions']
+  ['POST', '/api/auth/logout-others'], ['GET', '/api/me/sessions'],
+  // Managing the calendar link, and the one-off download, stay behind the
+  // session. The feed URL itself is deliberately reachable without one - it is
+  // the one endpoint whose credential is in the path - so a token that was
+  // never issued is probed here to prove it refuses rather than answers.
+  ['GET', '/api/me/calendar-feed'], ['POST', '/api/me/calendar-feed'],
+  ['DELETE', '/api/me/calendar-feed'], ['GET', '/api/me/calendar.ics'],
+  ['GET', `/api/calendar/cal_${'A'.repeat(32)}.ics`]
 ];
 
 const anon = await fetch(`${base}/api/session`);

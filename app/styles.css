@@ -212,3 +212,5 @@ html[data-theme="light"] .faq-item,html[data-theme="light"] .contact-form{backgr
 /* Support dialog. It reuses .modal-card and .contact-success; only the privacy
    line is particular to it. */
 .support-privacy{margin:0;color:var(--color-muted);font-size:10px;line-height:1.55}
+
+.calendar-feed-reveal{display:grid;gap:6px;margin-bottom:13px}.calendar-feed-reveal label{font-size:10px;font-weight:750}#calendarFeedUrl{width:100%;border:1px solid var(--color-rule-2);border-radius:var(--radius-input);padding:10px 11px;background:var(--color-paper-2);color:var(--color-ink);font-size:11px;font-family:inherit;min-height:44px}.calendar-feed-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:13px}.calendar-feed-actions button{min-height:44px}
