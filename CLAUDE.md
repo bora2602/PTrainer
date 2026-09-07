@@ -172,6 +172,14 @@ python -m graphify query    "how does a trainee log a workout"  # BFS, natural l
 python -m graphify god-nodes --top 10             # architectural hubs
 ```
 
+**Setup, after cloning.** `pnpm --dir app run graph:setup` — installs
+`graphifyy[sql]`, points `core.hooksPath` at `.githooks/`, and builds the graph.
+Three things cannot be committed and so are not in a fresh clone: the graph
+itself (generated, gitignored), the Python packages, and the git hooks —
+`.git/` is never pushed. `pnpm --dir app run graph:check` reports the same
+checks without changing anything and exits non-zero if something is wrong, so it
+also answers "is this still working?".
+
 **Rebuilding.** `pnpm --dir app run graph` (watch mode: `pnpm --dir app run
 graph:watch`, which rebuilds after 10s of quiet). Both call
 [scripts/graph-build.mjs](scripts/graph-build.mjs), which is the only supported

@@ -1,0 +1,11 @@
+# Paths graphify must not pull into the code knowledge graph.
+#
+# .githooks/ holds shell scripts carrying a #!/bin/sh shebang, so graphify
+# classifies them as code and graphs them. They are tooling that operates on the
+# project rather than part of it, and scripts/graph-build.mjs refuses to publish
+# a graph containing anything outside app/, work/ and scripts/ - so without this
+# line every build fails its own scope check.
+#
+# Everything else out of scope (node_modules, app/data, backups, graphify-out)
+# is already covered by .gitignore, which graphify honours by default.
+.githooks/

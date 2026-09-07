@@ -28,6 +28,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, renameSync, rmSync, readdirSync, watch } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findPython, graphifyArgs } from './graph-python.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(REPO_ROOT, 'graphify-out');
@@ -103,9 +104,14 @@ function renameWithRetry(from, to, attempts = 8) {
   }
 }
 
+const PYTHON = findPython();
+
 function graphify(step, argv) {
+  if (!PYTHON) {
+    fail('no Python interpreter found. Run: node scripts/graph-setup.mjs --check');
+  }
   log(`${step}...`);
-  const res = spawnSync('python', ['-m', 'graphify', ...argv], {
+  const res = spawnSync(PYTHON.cmd, graphifyArgs(PYTHON, argv), {
     cwd: REPO_ROOT,
     stdio: 'inherit',
     // networkx's louvain clustering iterates string-keyed sets whose order is
