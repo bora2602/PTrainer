@@ -126,9 +126,31 @@ if (!insideRepo) {
     else bad('could not set core.hooksPath');
   }
 
+  // Check the mode git RECORDED, not the mode on disk: Windows checkouts set
+  // core.filemode=false, so a hook committed there lands 100644 and git then
+  // silently declines to run it on macOS/Linux, with nothing to say why.
+  const indexModes = new Map(
+    (git('ls-files', '-s', HOOKS_DIR).stdout ?? '')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [meta, path] = line.split('\t');
+        return [path, meta.split(' ')[0]];
+      }),
+  );
+
   for (const hook of ['post-commit', 'post-checkout']) {
-    if (existsSync(join(REPO_ROOT, HOOKS_DIR, hook))) pass(`${HOOKS_DIR}/${hook}`, 'present');
-    else bad(`${HOOKS_DIR}/${hook}`, 'missing from the repo');
+    const rel = `${HOOKS_DIR}/${hook}`;
+    if (!existsSync(join(REPO_ROOT, HOOKS_DIR, hook))) {
+      bad(rel, 'missing from the repo');
+      continue;
+    }
+    const mode = indexModes.get(rel);
+    if (mode && mode !== '100755') {
+      bad(rel, `committed ${mode}, not executable - run: git update-index --chmod=+x ${rel}`);
+    } else {
+      pass(rel, 'present, executable');
+    }
   }
 }
 
