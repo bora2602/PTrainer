@@ -20,12 +20,13 @@ choice differs.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/*.css`. Mobile-first; the workout logger must work one-handed on a phone. |
+| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Mobile-first; the workout logger must work one-handed on a phone. `app/preview.*` is a development-only device frame at `/preview`. |
 | Backend | Node 24 with `node:http` — no web framework | `app/server.mjs`. Modular boundaries are described in §3. |
 | Database | PostgreSQL 16 in production; PGlite for local development | Same SQL either way. Numbered migrations in `app/migrations/`, applied at startup. |
 | Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. |
 | Mail | Pluggable transport (`app/email.mjs`) | `log` for development, `http` for a provider. Production refuses to start on `log`. |
-| File storage | None yet | Deferred until progress photos or exercise media are in scope — see `docs/architecture-decisions.md`. |
+| File storage | Message attachments only, as `bytea` in PostgreSQL | Photos and PDFs in messages (maintainer decision, 2026-09-25): 5 MB each, type read from the bytes, served only within an active relationship. Anything larger in scope — progress photos, exercise media — moves to private object storage first; see `docs/architecture-decisions.md`. |
+| Static files | Named allow-list in `server.mjs` (`PUBLIC_FILES`) | A new frontend file is not served until it is added there. Never go back to serving the folder: it holds the source and, without Docker, the database files. |
 | Charts | Hand-rolled CSS bars, no charting library | Keeps the dependency count at two. |
 | Deploy | Docker, Compose, optional Caddy edge, Cloudflare tunnel | Env-based config; no secrets in source control (§7). |
 
@@ -45,7 +46,9 @@ One process, organised by module boundary. The intended modules are `identity`,
 been extracted into `app/validation.mjs` (which is why they can be unit tested
 without a server), and `email.mjs`, `retention.mjs`, `bounded-map.mjs`,
 `food-lookup.mjs` and `exercise-catalog.mjs` are separate. The routing and
-persistence for each domain is not yet split.
+persistence for each domain is not yet split. On the frontend, the workout flows
+(library, assign, client page, session logger) live in `workouts.js` and
+messaging in `messages.js`; everything else is still in `app.js`.
 
 The target stands, and the way to reach it is to extract a module when you next
 have reason to touch that domain, rather than in one sweeping refactor.
@@ -67,7 +70,7 @@ Tables: `users`, `sessions`, `user_profiles`, `trainer_trainee_relationships`,
 `invitations`, `exercises`, `workout_templates`, `assigned_workouts`,
 `workout_logs`, `set_logs`, `progress_metrics`, `progress_entries`,
 `nutrition_entries`, `nutrition_targets`, `trainer_notes`, `messages`,
-`notifications`, `audit_events`, `privacy_consents`, `password_reset_tokens`,
+`message_attachments`, `notifications`, `audit_events`, `privacy_consents`, `password_reset_tokens`,
 `email_verification_tokens`, `calendar_feed_tokens`, `subscriptions`,
 `schema_migrations`.
 
@@ -240,7 +243,7 @@ The graph is a map, not a drift check. Tests still are.
 7. Authorization test suite, audit events, backups, deploy pipeline
 8. Pilot, then reprioritize from feedback
 
-Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. They are not to be extended, and the maintainer should either move them into scope in the plan document or record them as pilot-only extras — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
+Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. **Messaging was then extended by an explicit maintainer decision on 2026-09-25** (photos, PDFs, emoji), which answers open decision #6 in practice; the plan document's §2/§18 lines still need that edit, which is the maintainer's. Billing is still not to be extended — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
 
 The **calendar view** is a deliberate borderline case, resolved rather than drifted into: plan §2 lists "calendar and appointments" under later releases, but what shipped is only a read-only month view of assignments the MVP already creates — §2's MVP includes "assignment, scheduling" and §6 already specifies "upcoming assignments" on the trainer dashboard. It reads; it writes nothing.
 

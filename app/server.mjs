@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initializeDatabase, query, transaction, databaseMode, closeDatabase } from './database.mjs';
 import { exerciseCatalog } from './exercise-catalog.mjs';
@@ -19,6 +19,9 @@ import {
   validName,
   validPassword,
   normalizeWorkoutInput,
+  normalizeTemplateExercises,
+  sessionStart,
+  sessionDuration,
   NUTRITION_ENTRY_TYPES,
   validDateOnly,
   nutritionValues,
@@ -51,7 +54,10 @@ import {
   encodeCursor,
   decodeCursor,
   pageLimit,
-  nextCursorFor
+  nextCursorFor,
+  MAX_MESSAGE_ATTACHMENT_BYTES,
+  normalizeAttachments,
+  contentDisposition
 } from './validation.mjs';
 
 const scrypt = promisify(scryptCallback);
@@ -95,7 +101,32 @@ const REGISTRATION_LIMIT = IS_PRODUCTION ? 5 : 5000;
 // public deployment and stops a test suite dead on its second run. Production
 // keeps the tight number.
 const LOGIN_LIMIT = IS_PRODUCTION ? 8 : 5000;
-const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml' };
+// Messages carrying files, per sender per hour. Every file is a database write
+// of up to 5 MB, so this is tighter than the plain message limit; the test
+// suite reuses the demo accounts, so development gets headroom.
+const ATTACHMENT_MESSAGE_LIMIT = IS_PRODUCTION ? 20 : 1000;
+const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.woff2':'font/woff2' };
+// The only files the web server hands out. The app folder also holds the server
+// source, migrations, package files, node_modules and - when running without
+// Docker - the PGlite data directory, whose files are the database itself:
+// users, password hashes and live session ids. Serving "whatever is on disk"
+// published all of that to anyone who could reach the port, so the public set
+// is named here and everything else answers 404.
+const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','messages.js','styles.css','tokens.css','aurora.css','fonts.css','robots.txt']);
+const PUBLIC_DIRECTORIES = ['assets/'];
+// The device preview frames the app at phone sizes. It is a development aid, so
+// production neither serves it nor relaxes frame-ancestors for it.
+const PREVIEW_FILES = new Set(['preview.html','preview.js','preview.css']);
+function publicFile(pathname){
+  const requested=pathname==='/'?'index.html':pathname==='/preview'?'preview.html':pathname.slice(1);
+  let decoded;try{decoded=decodeURIComponent(requested)}catch{return null}
+  if(decoded.includes('\\')||decoded.includes('\u0000'))return null;
+  const clean=posix.normalize(decoded);
+  if(clean.startsWith('..')||clean.startsWith('/')||clean.split('/').some(part=>part.startsWith('.')))return null;
+  if(PUBLIC_FILES.has(clean)||PUBLIC_DIRECTORIES.some(dir=>clean.startsWith(dir)))return clean;
+  if(!IS_PRODUCTION&&PREVIEW_FILES.has(clean))return clean;
+  return null;
+}
 
 const sessions = new BoundedMap({ maxEntries: 20000, ttlMs: SESSION_TTL });
 const invitations = new Map();
@@ -263,7 +294,9 @@ async function issueEmailVerification(user){
   await query('INSERT INTO email_verification_tokens(token_hash,user_id,email,expires_at) VALUES($1,$2,$3,$4)',[tokenDigest(rawToken),user.id,user.email,new Date(Date.now()+24*3600000).toISOString()]);
   const outcome=await sendEmail({to:user.email,...verificationEmail(user.name,`${APP_ORIGIN}/?verify=${rawToken}`)},log);
   await audit(user.id,'EMAIL_VERIFICATION_SENT','user',user.id,{delivered:outcome.delivered});
-  return {delivered:outcome.delivered,...(IS_PRODUCTION?{}:{demoVerificationToken:rawToken})};
+  // Outside production the transport is reported too, so the interface can say
+  // "printed to the server log" instead of implying an inbox received it.
+  return {delivered:outcome.delivered,...(IS_PRODUCTION?{}:{transport:outcome.transport,demoVerificationToken:rawToken})};
 }
 
 // The bundled catalog seeds the platform library once. Existing rows are left
@@ -287,7 +320,7 @@ const log=(level,event,fields={})=>{
 // calendar feed carries its credential in the URL, and a subscribed client asks
 // for it on a schedule forever. Collapsing it first is what keeps that token out
 // of every request log line.
-const routeLabel=path=>String(path||'/').replace(/^\/api\/calendar\/[^/]+$/,'/api/calendar/:token.ics').replace(/^\/api\/invitations\/[^/]+\/accept$/,'/api/invitations/:token/accept').replace(/^\/api\/assigned-workouts\/[^/]+\/logs$/,'/api/assigned-workouts/:id/logs').replace(/^\/api\/assigned-workouts\/[^/]+$/,'/api/assigned-workouts/:id').replace(/^\/api\/food-products\/[^/]+$/,'/api/food-products/:barcode').replace(/^\/api\/nutrition-entries\/[^/]+$/,'/api/nutrition-entries/:id').replace(/^\/api\/notifications\/[^/]+\/read$/,'/api/notifications/:id/read').replace(/^\/api\/relationships\/[^/]+\/[^/]+$/,'/api/relationships/:trainerId/:traineeId').replace(/^\/api\/exercises\/[^/]+$/,'/api/exercises/:id').replace(/^\/api\/workout-templates\/[^/]+\/duplicate$/,'/api/workout-templates/:id/duplicate').replace(/^\/api\/workout-templates\/[^/]+$/,'/api/workout-templates/:id').replace(/^\/api\/progress-entries\/[^/]+$/,'/api/progress-entries/:id').replace(/^\/api\/trainer-notes\/[^/]+$/,'/api/trainer-notes/:id');
+const routeLabel=path=>String(path||'/').replace(/^\/api\/calendar\/[^/]+$/,'/api/calendar/:token.ics').replace(/^\/api\/invitations\/[^/]+\/accept$/,'/api/invitations/:token/accept').replace(/^\/api\/assigned-workouts\/[^/]+\/logs$/,'/api/assigned-workouts/:id/logs').replace(/^\/api\/assigned-workouts\/[^/]+$/,'/api/assigned-workouts/:id').replace(/^\/api\/food-products\/[^/]+$/,'/api/food-products/:barcode').replace(/^\/api\/nutrition-entries\/[^/]+$/,'/api/nutrition-entries/:id').replace(/^\/api\/notifications\/[^/]+\/read$/,'/api/notifications/:id/read').replace(/^\/api\/relationships\/[^/]+\/[^/]+$/,'/api/relationships/:trainerId/:traineeId').replace(/^\/api\/exercises\/[^/]+$/,'/api/exercises/:id').replace(/^\/api\/workout-templates\/[^/]+\/duplicate$/,'/api/workout-templates/:id/duplicate').replace(/^\/api\/workout-templates\/[^/]+$/,'/api/workout-templates/:id').replace(/^\/api\/progress-entries\/[^/]+$/,'/api/progress-entries/:id').replace(/^\/api\/trainer-notes\/[^/]+$/,'/api/trainer-notes/:id').replace(/^\/api\/messages\/attachments\/[^/]+$/,'/api/messages/attachments/:id');
 
 
 await initializeDatabase();
@@ -383,9 +416,13 @@ if(!IS_PRODUCTION){
   }
 }
 
-function securityHeaders(res,{cacheControl='no-store'}={}) {
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
-  res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('X-Frame-Options','DENY'); res.setHeader('Referrer-Policy','no-referrer');
+// Nothing may be framed, with one development exception: the app page itself,
+// by its own origin, because that is how the device preview shows it at phone
+// sizes. Production never allows it, and no API response ever does.
+function securityHeaders(res,{cacheControl='no-store',frameable=false}={}) {
+  const sameOriginFrame=frameable&&!IS_PRODUCTION;
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors ${sameOriginFrame?"'self'":"'none'"}; object-src 'none'`);
+  res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('X-Frame-Options',sameOriginFrame?'SAMEORIGIN':'DENY'); res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('Permissions-Policy','camera=(self), microphone=(), geolocation=(), payment=()'); res.setHeader('Cross-Origin-Opener-Policy','same-origin'); res.setHeader('Cross-Origin-Resource-Policy','same-origin'); res.setHeader('Cache-Control',cacheControl);
 }
 function json(res,status,payload){securityHeaders(res);res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(payload))}
@@ -476,7 +513,29 @@ async function trainerDashboard(user,timezone){
   const overdue=trainerAssignments.filter(a=>a.status==='ASSIGNED'&&a.dueDate&&String(a.dueDate).slice(0,10)<today);
   return{kind:'TRAINER',activeClients:traineeIds.length,clients,workoutsCompleted:completed,assignedCount:trainerAssignments.length,completionRate:trainerAssignments.length?Math.round(completed/trainerAssignments.length*100):0,progressUpdates:Number(progress.rows[0]?.count||0),attentionCount:overdue.length,attentionItems:overdue.slice(0,5).map(a=>({id:a.id,trainee:publicUser(clientRecords.get(a.traineeId)),name:a.templateSnapshot.name,dueDate:a.dueDate})),upcoming:trainerAssignments.filter(a=>!['COMPLETED','SKIPPED'].includes(a.status)).sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))).slice(0,6).map(a=>({id:a.id,trainee:publicUser(clientRecords.get(a.traineeId)),name:a.templateSnapshot.name,dueDate:a.dueDate,status:a.status}))};
 }
-async function traineeDashboard(user,timezone){const active=[...assignments.values()].filter(a=>a.traineeId===user.id&&a.status!=='ARCHIVED').sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))),completed=active.filter(a=>a.status==='COMPLETED').length,relationship=(await relationshipsFor(user,'ACTIVE'))[0],trainerUser=relationship&&await findUserById(relationship.trainerId);return{kind:'TRAINEE',todayWorkout:active[0]?{id:active[0].id,name:active[0].templateSnapshot.name,exerciseCount:active[0].templateSnapshot.exercises.length,status:active[0].status}:null,currentStreak:completed,weeklyCompletion:active.length?Math.round(completed/active.length*100):0,completedCount:completed,assignedCount:active.length,trainerName:trainerUser?.name||null}}
+async function traineeDashboard(user,timezone){
+  const mine=[...assignments.values()].filter(a=>a.traineeId===user.id&&a.status!=='ARCHIVED'),completed=mine.filter(a=>a.status==='COMPLETED').length;
+  const relationship=(await relationshipsFor(user,'ACTIVE'))[0],trainerUser=relationship&&await findUserById(relationship.trainerId);
+  const today=todayIn(timezone),due=a=>String(a.dueDate||'').slice(0,10),open=a=>a.status==='ASSIGNED'||a.status==='IN_PROGRESS';
+  const byDue=(a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'));
+  // "Today's workout" means today's. Failing that the next one coming, and only
+  // then the most recent one missed - never an old session already finished,
+  // which is what sorting everything by date used to surface.
+  const next=mine.filter(a=>open(a)&&due(a)===today).sort(byDue)[0]
+    ||mine.filter(a=>open(a)&&(!a.dueDate||due(a)>today)).sort(byDue)[0]
+    ||mine.filter(a=>open(a)&&due(a)&&due(a)<today).sort(byDue).at(-1);
+  // This week runs Monday to Sunday in the trainee's own zone.
+  const todayDate=new Date(`${today}T00:00:00.000Z`),monday=new Date(todayDate.getTime()-((todayDate.getUTCDay()+6)%7)*86400000);
+  const weekStart=monday.toISOString().slice(0,10),weekEnd=new Date(monday.getTime()+6*86400000).toISOString().slice(0,10);
+  const thisWeek=mine.filter(a=>due(a)>=weekStart&&due(a)<=weekEnd),weekDone=thisWeek.filter(a=>a.status==='COMPLETED').length;
+  return{kind:'TRAINEE',
+    todayWorkout:next?{id:next.id,name:next.templateSnapshot.name,exerciseCount:next.templateSnapshot.exercises.length,status:next.status,dueDate:due(next)||null}:null,
+    today,
+    // Kept for older clients; it has always been the all-time completed count.
+    currentStreak:completed,
+    weeklyCompletion:thisWeek.length?Math.round(weekDone/thisWeek.length*100):0,weeklyCompleted:weekDone,weeklyScheduled:thisWeek.length,
+    completedCount:completed,assignedCount:mine.length,trainerName:trainerUser?.name||null};
+}
 // A trainee always reaches their own records. A trainer reaches them through an
 // active relationship AND the specific permission the action needs; passing no
 // capability means the relationship alone is enough, which is the case for a
@@ -490,6 +549,38 @@ async function accessibleTrainee(user,requestedId,capability=null){
   if(capability&&!relationshipPermissions(relationship)[capability])return null;
   return traineeId;
 }
+// A template may point each exercise at a library entry. Only the platform
+// catalog and the trainer's own movements count: an id from somebody else's
+// library is dropped, so a template can never become a way to reach another
+// trainer's exercises.
+async function keepAccessibleExerciseIds(user,exercises){
+  const ids=[...new Set(exercises.map(item=>item.exerciseId).filter(Boolean))];
+  if(!ids.length)return exercises;
+  const found=await query("SELECT id FROM exercises WHERE id = ANY($1) AND (visibility='PLATFORM' OR created_by=$2) AND deleted_at IS NULL",[ids,user.id]);
+  const allowed=new Set(found.rows.map(row=>row.id));
+  return exercises.map(item=>({...item,exerciseId:allowed.has(item.exerciseId)?item.exerciseId:null}));
+}
+const ATTACHMENT_ERROR_MESSAGES={
+  ATTACHMENTS_INVALID:'An attached file could not be read. Try attaching it again.',
+  TOO_MANY_ATTACHMENTS:'Attach up to 4 files per message.',
+  ATTACHMENT_TOO_LARGE:'Each file can be up to 5 MB, and up to 10 MB per message.',
+  ATTACHMENT_TYPE_UNSUPPORTED:'Only photos (JPEG, PNG, WebP, GIF) and PDF files can be sent.'
+};
+// What a conversation shows about an attachment. The bytes are fetched
+// separately, through a route that checks the relationship again.
+const publicAttachment=row=>({id:row.id,fileName:row.file_name,contentType:row.content_type,byteSize:Number(row.byte_size),url:`/api/messages/attachments/${row.id}`});
+async function attachmentsFor(messageIds){
+  const grouped=new Map();
+  if(!messageIds.length)return grouped;
+  // Photos first, then files: a message reads as its pictures, with any
+  // documents underneath.
+  const result=await query("SELECT id,message_id,file_name,content_type,byte_size FROM message_attachments WHERE message_id = ANY($1) ORDER BY (content_type LIKE 'image/%') DESC,created_at,id",[messageIds]);
+  for(const row of result.rows){if(!grouped.has(row.message_id))grouped.set(row.message_id,[]);grouped.get(row.message_id).push(publicAttachment(row))}
+  return grouped;
+}
+// The export lists what was attached, not the bytes: each file stays one
+// request away at its url for as long as the relationship is active.
+async function messagesWithAttachments(rows){const grouped=await attachmentsFor(rows.map(row=>row.id));return rows.map(row=>({...row,attachments:grouped.get(row.id)||[]}))}
 async function activeRelationship(user,requestedTraineeId){
   const active=await relationshipsFor(user,'ACTIVE');
   return user.role==='TRAINER'?active.find(item=>!requestedTraineeId||item.traineeId===requestedTraineeId):active[0]||undefined;
@@ -681,7 +772,7 @@ async function api(req,res,url){
   }
   if(req.method==='GET'&&url.pathname==='/api/me/export'){
     const [profile,connections,workouts,logs,setRows,progress,nutrition,nutritionTarget,messages,privacyConsents]=await Promise.all([query('SELECT bio,goals,specialties,preferred_units,timezone,updated_at FROM user_profiles WHERE user_id=$1',[user.id]),query('SELECT trainer_id,trainee_id,status,created_at,updated_at FROM trainer_trainee_relationships WHERE trainer_id=$1 OR trainee_id=$1',[user.id]),query('SELECT id,template_snapshot,due_date,status,created_at FROM assigned_workouts WHERE trainer_id=$1 OR trainee_id=$1',[user.id]),query('SELECT id,assigned_workout_id,exercises,completed_count,status,created_at FROM workout_logs WHERE author_id=$1',[user.id]),query('SELECT s.workout_log_id,s.exercise_index,s.set_index,s.completed,s.reps,s.load_value::float,s.load_unit,s.duration_seconds,s.distance_value::float,s.distance_unit,s.rest_seconds,s.exertion::float,s.pain_flag,s.note FROM set_logs s JOIN workout_logs l ON l.id=s.workout_log_id WHERE l.author_id=$1 ORDER BY s.exercise_index,s.set_index',[user.id]),query('SELECT id,metric_type,value,unit,measured_at,note,created_at FROM progress_entries WHERE trainee_id=$1',[user.id]),query('SELECT id,entry_date,entry_type,description,calories,protein_g,carbs_g,fat_g,water_ml,food_barcode,food_name,food_brand,food_quantity_g,data_source,created_at,updated_at FROM nutrition_entries WHERE trainee_id=$1',[user.id]),query('SELECT calories,protein_g,carbs_g,fat_g,water_ml,author_id,updated_at FROM nutrition_targets WHERE trainee_id=$1',[user.id]),query('SELECT id,sender_id,body,created_at FROM messages WHERE sender_id=$1',[user.id]),query('SELECT notice_version,source,accepted_at,withdrawn_at FROM privacy_consents WHERE user_id=$1 ORDER BY accepted_at',[user.id])]);
-    await audit(user.id,'PERSONAL_DATA_EXPORTED','user',user.id);return json(res,200,{exportedAt:new Date().toISOString(),user:publicUser(user),profile:profile.rows[0]||null,relationships:connections.rows,assignedWorkouts:workouts.rows,authoredWorkoutLogs:logs.rows,authoredSetLogs:setRows.rows,progressEntries:progress.rows,nutritionEntries:nutrition.rows,nutritionTarget:nutritionTarget.rows[0]||null,authoredMessages:messages.rows,privacyConsents:privacyConsents.rows});
+    await audit(user.id,'PERSONAL_DATA_EXPORTED','user',user.id);return json(res,200,{exportedAt:new Date().toISOString(),user:publicUser(user),profile:profile.rows[0]||null,relationships:connections.rows,assignedWorkouts:workouts.rows,authoredWorkoutLogs:logs.rows,authoredSetLogs:setRows.rows,progressEntries:progress.rows,nutritionEntries:nutrition.rows,nutritionTarget:nutritionTarget.rows[0]||null,authoredMessages:await messagesWithAttachments(messages.rows),privacyConsents:privacyConsents.rows});
   }
   if(req.method==='GET'&&url.pathname==='/api/me/audit-events'){const result=await query('SELECT action,entity_type,entity_id,metadata,created_at FROM audit_events WHERE actor_id=$1 ORDER BY created_at DESC LIMIT 50',[user.id]);return json(res,200,{events:result.rows})}
   // Managing the calendar link. The raw token is returned by exactly one of
@@ -724,7 +815,7 @@ async function api(req,res,url){
     return textResponse(res,200,await calendarDocument(user,feedOrigin(req)),'text/calendar; charset=utf-8');
   }
   if(req.method==='DELETE'&&url.pathname==='/api/me/account'){
-    if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));const purged={setLogs:0,workoutLogs:0,progressEntries:0,nutritionEntries:0,nutritionTargets:0,trainerNotes:0,messages:0,notifications:0,tokens:0};
+    if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));const purged={setLogs:0,workoutLogs:0,progressEntries:0,nutritionEntries:0,nutritionTargets:0,trainerNotes:0,messages:0,messageAttachments:0,notifications:0,tokens:0};
     await transaction(async tx=>{
       // Anonymising the identity row left every measurement, meal note, set and
       // message body behind, which is the gap the privacy checklist calls out.
@@ -737,7 +828,7 @@ async function api(req,res,url){
       purged.trainerNotes=(await tx('DELETE FROM trainer_notes WHERE trainer_id=$1 OR trainee_id=$1 RETURNING id',[user.id])).rowCount;
       // A conversation has two sides; the other person's copy stays, but nothing
       // this account wrote survives in it.
-      purged.messages=(await tx("UPDATE messages SET body='[deleted]' WHERE sender_id=$1 AND body<>'[deleted]' RETURNING id",[user.id])).rowCount;
+      purged.messages=(await tx("UPDATE messages SET body='[deleted]' WHERE sender_id=$1 AND body<>'[deleted]' RETURNING id",[user.id])).rowCount;purged.messageAttachments=(await tx('DELETE FROM message_attachments WHERE uploader_id=$1 RETURNING id',[user.id])).rowCount;
       purged.notifications=(await tx('DELETE FROM notifications WHERE recipient_id=$1 RETURNING id',[user.id])).rowCount;
       const resets=await tx('DELETE FROM password_reset_tokens WHERE user_id=$1 RETURNING token_hash',[user.id]);
       const verifications=await tx('DELETE FROM email_verification_tokens WHERE user_id=$1 RETURNING token_hash',[user.id]);
@@ -766,7 +857,10 @@ async function api(req,res,url){
     if(!requireRole(res,user,'TRAINER'))return;
     if(req.method==='GET'){
       const search=String(url.searchParams.get('q')||'').trim().toLocaleLowerCase().slice(0,100);
-      const limit=Math.min(250,Math.max(1,Number(url.searchParams.get('limit'))||60));
+      // The picker loads the whole library once and filters as the trainer
+      // types. At 250 the platform catalog alone nearly filled a page, and a
+      // trainer's own movements - sorted in by name - were the ones cut off.
+      const limit=Math.min(1000,Math.max(1,Number(url.searchParams.get('limit'))||60));
       // A trainer reaches the platform library plus their own movements, never
       // another trainer's. Retired rows stay for the history that names them but
       // drop out of every list.
@@ -819,7 +913,7 @@ async function api(req,res,url){
   if(req.method==='POST'&&url.pathname==='/api/workout-templates'){
     if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const name=typeof body.name==='string'?body.name.trim():'';
     if(name.length<3||name.length>100||!Array.isArray(body.exercises)||body.exercises.length<1||body.exercises.length>30)return json(res,422,{error:{code:'TEMPLATE_INVALID',message:'Add a name and 1-30 valid exercises.'}});
-    const exercises=body.exercises.map(x=>({name:String(x.name||'').trim().slice(0,100),sets:Math.min(20,Math.max(1,Number(x.sets)||1)),reps:Math.min(1000,Math.max(1,Number(x.reps)||1)),restSeconds:Math.min(900,Math.max(0,Number(x.restSeconds)||0)),exerciseId:typeof x.exerciseId==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(x.exerciseId)?x.exerciseId:null}));if(exercises.some(x=>x.name.length<2))return json(res,422,{error:{code:'EXERCISE_INVALID',message:'Every exercise needs a valid name.'}});
+    const normalized=normalizeTemplateExercises(body.exercises);if(!normalized)return json(res,422,{error:{code:'EXERCISE_INVALID',message:'Every exercise needs a name, and a target weight needs a unit (kg or lb).'}});const exercises=await keepAccessibleExerciseIds(user,normalized);
     const template={id:id('tpl'),trainerId:user.id,name,description:String(body.description||'').trim().slice(0,500),exercises,version:1,createdAt:new Date().toISOString()};await query('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[template.id,template.trainerId,template.name,template.description,template.version,JSON.stringify(template.exercises),template.createdAt]);workoutTemplates.set(template.id,template);await audit(user.id,'WORKOUT_TEMPLATE_CREATED','workout_template',template.id);return json(res,201,{template});
   }
   const templateMatch=url.pathname.match(/^\/api\/workout-templates\/([A-Za-z0-9_-]{1,64})$/);
@@ -848,8 +942,9 @@ async function api(req,res,url){
     const body=await readJson(req,res);if(!body)return;
     const name=typeof body.name==='string'?body.name.trim():'';
     if(name.length<3||name.length>100||!Array.isArray(body.exercises)||body.exercises.length<1||body.exercises.length>30)return json(res,422,{error:{code:'TEMPLATE_INVALID',message:'Add a name and 1-30 valid exercises.'}});
-    const exercises=body.exercises.map(x=>({name:String(x.name||'').trim().slice(0,100),sets:Math.min(20,Math.max(1,Number(x.sets)||1)),reps:Math.min(1000,Math.max(1,Number(x.reps)||1)),restSeconds:Math.min(900,Math.max(0,Number(x.restSeconds)||0)),exerciseId:typeof x.exerciseId==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(x.exerciseId)?x.exerciseId:null}));
-    if(exercises.some(x=>x.name.length<2))return json(res,422,{error:{code:'EXERCISE_INVALID',message:'Every exercise needs a valid name.'}});
+    const normalized=normalizeTemplateExercises(body.exercises);
+    if(!normalized)return json(res,422,{error:{code:'EXERCISE_INVALID',message:'Every exercise needs a name, and a target weight needs a unit (kg or lb).'}});
+    const exercises=await keepAccessibleExerciseIds(user,normalized);
     const nextVersion=Number(template.version||1)+1;
     await query('UPDATE workout_templates SET name=$1,description=$2,exercises=$3,version=$4,updated_at=now() WHERE id=$5 AND trainer_id=$6',[name,String(body.description||'').trim().slice(0,500),JSON.stringify(exercises),nextVersion,templateId,user.id]);
     Object.assign(template,{name,description:String(body.description||'').trim().slice(0,500),exercises,version:nextVersion});
@@ -893,7 +988,7 @@ async function api(req,res,url){
     return json(res,201,{assignment:created[0],assignments:created});
   }
   if(req.method==='POST'&&url.pathname==='/api/assigned-workouts/custom'){
-    if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body),relationship=await findRelationship(user.id,body.traineeId);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'ASSIGNMENT_FORBIDDEN',message:'An active coaching relationship is required.'}});const createdAt=new Date().toISOString(),template={id:id('tpl'),trainerId:user.id,name:workout.name,description:workout.description,exercises:workout.exercises,version:1,createdAt},assignment={id:id('assigned'),templateId:null,templateSnapshot:null,trainerId:user.id,traineeId:body.traineeId,dueDate:workout.dueDate,status:'ASSIGNED',createdAt};assignment.templateId=template.id;assignment.templateSnapshot=structuredClone(template);await transaction(async tx=>{await tx('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[template.id,template.trainerId,template.name,template.description,template.version,JSON.stringify(template.exercises),template.createdAt]);await tx('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[assignment.id,assignment.templateId,assignment.trainerId,assignment.traineeId,JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.status,assignment.createdAt]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_ASSIGNED',$3,$4)",[id('notification'),assignment.traineeId,'New workout assigned',`${assignment.templateSnapshot.name}${assignment.dueDate?` · ${assignment.dueDate}`:''}`])});workoutTemplates.set(template.id,template);assignments.set(assignment.id,assignment);await audit(user.id,'WORKOUT_ASSIGNED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,custom:true});return json(res,201,{assignment});
+    if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body),relationship=await findRelationship(user.id,body.traineeId);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});workout.exercises=await keepAccessibleExerciseIds(user,workout.exercises);if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'ASSIGNMENT_FORBIDDEN',message:'An active coaching relationship is required.'}});const createdAt=new Date().toISOString(),template={id:id('tpl'),trainerId:user.id,name:workout.name,description:workout.description,exercises:workout.exercises,version:1,createdAt},assignment={id:id('assigned'),templateId:null,templateSnapshot:null,trainerId:user.id,traineeId:body.traineeId,dueDate:workout.dueDate,status:'ASSIGNED',createdAt};assignment.templateId=template.id;assignment.templateSnapshot=structuredClone(template);await transaction(async tx=>{await tx('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[template.id,template.trainerId,template.name,template.description,template.version,JSON.stringify(template.exercises),template.createdAt]);await tx('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[assignment.id,assignment.templateId,assignment.trainerId,assignment.traineeId,JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.status,assignment.createdAt]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_ASSIGNED',$3,$4)",[id('notification'),assignment.traineeId,'New workout assigned',`${assignment.templateSnapshot.name}${assignment.dueDate?` · ${assignment.dueDate}`:''}`])});workoutTemplates.set(template.id,template);assignments.set(assignment.id,assignment);await audit(user.id,'WORKOUT_ASSIGNED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,custom:true});return json(res,201,{assignment});
   }
   if(req.method==='GET'&&url.pathname==='/api/assigned-workouts'){
     const limit=pageLimit(url,50,200),cursor=decodeCursor(url.searchParams.get('cursor'),2);
@@ -904,13 +999,13 @@ async function api(req,res,url){
     // square to sit in, so a window excludes it rather than pretending a date.
     const dateWindow=normalizeDateWindow(url.searchParams.get('from'),url.searchParams.get('to'));
     if(!dateWindow)return json(res,422,{error:{code:'DATE_WINDOW_INVALID',message:'Send from and to together as valid dates no more than a year apart.'}});
-    const result=await query(`SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL AND ${ownerColumn}=$1 AND ($2::text IS NULL OR trainee_id=$2) AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4)) AND ($6::date IS NULL OR (due_date IS NOT NULL AND due_date >= $6 AND due_date <= $7)) ORDER BY created_at DESC, id DESC LIMIT $5`,[user.id,requestedTrainee,cursor?cursor[0]:null,cursor?cursor[1]:null,limit,dateWindow.from,dateWindow.to]);
-    const visible=result.rows.map(row=>({id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at}));
+    const result=await query(`SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at,(SELECT json_build_object('completedCount',l.completed_count,'durationSeconds',l.duration_seconds,'finishedAt',l.created_at) FROM workout_logs l WHERE l.assigned_workout_id=assigned_workouts.id AND l.status='FINAL' AND l.deleted_at IS NULL ORDER BY l.created_at DESC LIMIT 1) AS latest_log FROM assigned_workouts WHERE deleted_at IS NULL AND ${ownerColumn}=$1 AND ($2::text IS NULL OR trainee_id=$2) AND ($3::timestamptz IS NULL OR (created_at, id) < ($3, $4)) AND ($6::date IS NULL OR (due_date IS NOT NULL AND due_date >= $6 AND due_date <= $7)) ORDER BY created_at DESC, id DESC LIMIT $5`,[user.id,requestedTrainee,cursor?cursor[0]:null,cursor?cursor[1]:null,limit,dateWindow.from,dateWindow.to]);
+    const visible=result.rows.map(row=>({id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at,latestLog:row.latest_log||null}));
     return json(res,200,{assignments:visible,nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])});
   }
   const assignmentEdit=url.pathname.match(/^\/api\/assigned-workouts\/([A-Za-z0-9_-]{1,64})$/);
   if(req.method==='PATCH'&&assignmentEdit){
-    if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const assignment=assignments.get(assignmentEdit[1]);if(!assignment||assignment.trainerId!==user.id)return json(res,404,{error:{code:'WORKOUT_NOT_FOUND',message:'Assigned workout not found.'}});const relationship=await findRelationship(user.id,assignment.traineeId);if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'WORKOUT_EDIT_FORBIDDEN',message:'An active coaching relationship is required.'}});if(assignment.status!=='ASSIGNED')return json(res,409,{error:{code:'WORKOUT_LOCKED',message:'A workout cannot be edited after logging has started.'}});const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});assignment.templateSnapshot={...assignment.templateSnapshot,name:workout.name,description:workout.description,exercises:workout.exercises,version:Number(assignment.templateSnapshot.version||1)+1};assignment.dueDate=workout.dueDate;await transaction(async tx=>{await tx('UPDATE assigned_workouts SET template_snapshot=$1,due_date=$2 WHERE id=$3 AND trainer_id=$4 AND status=\'ASSIGNED\'',[JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.id,user.id]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_UPDATED',$3,$4)",[id('notification'),assignment.traineeId,'Workout updated',assignment.templateSnapshot.name])});await audit(user.id,'ASSIGNED_WORKOUT_UPDATED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,version:assignment.templateSnapshot.version});return json(res,200,{assignment});
+    if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const assignment=assignments.get(assignmentEdit[1]);if(!assignment||assignment.trainerId!==user.id)return json(res,404,{error:{code:'WORKOUT_NOT_FOUND',message:'Assigned workout not found.'}});const relationship=await findRelationship(user.id,assignment.traineeId);if(!relationship||relationship.status!=='ACTIVE')return json(res,403,{error:{code:'WORKOUT_EDIT_FORBIDDEN',message:'An active coaching relationship is required.'}});if(assignment.status!=='ASSIGNED')return json(res,409,{error:{code:'WORKOUT_LOCKED',message:'A workout cannot be edited after logging has started.'}});const body=await readJson(req,res);if(!body)return;const workout=normalizeWorkoutInput(body);if(!workout)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Add a valid name, date, and 1–30 exercises.'}});workout.exercises=await keepAccessibleExerciseIds(user,workout.exercises);assignment.templateSnapshot={...assignment.templateSnapshot,name:workout.name,description:workout.description,exercises:workout.exercises,version:Number(assignment.templateSnapshot.version||1)+1};assignment.dueDate=workout.dueDate;await transaction(async tx=>{await tx('UPDATE assigned_workouts SET template_snapshot=$1,due_date=$2 WHERE id=$3 AND trainer_id=$4 AND status=\'ASSIGNED\'',[JSON.stringify(assignment.templateSnapshot),assignment.dueDate||null,assignment.id,user.id]);await tx("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'WORKOUT_UPDATED',$3,$4)",[id('notification'),assignment.traineeId,'Workout updated',assignment.templateSnapshot.name])});await audit(user.id,'ASSIGNED_WORKOUT_UPDATED','assigned_workout',assignment.id,{traineeId:assignment.traineeId,version:assignment.templateSnapshot.version});return json(res,200,{assignment});
   }
   if(req.method==='GET'&&url.pathname==='/api/invitations'){
     if(!requireRole(res,user,'TRAINER'))return;
@@ -983,9 +1078,9 @@ async function api(req,res,url){
       // An unfinished draft is self-reported work in progress, so it stays with
       // its author until it is submitted. Finished logs are visible to both
       // parties, which is what lets a trainer review what was actually lifted.
-      const stored=await query("SELECT id,author_id,status,completed_count,exercises,created_at,updated_at FROM workout_logs WHERE assigned_workout_id=$1 AND deleted_at IS NULL AND (status='FINAL' OR author_id=$2) ORDER BY created_at DESC LIMIT 50",[assignment.id,user.id]);
+      const stored=await query("SELECT id,author_id,status,completed_count,exercises,started_at,duration_seconds,created_at,updated_at FROM workout_logs WHERE assigned_workout_id=$1 AND deleted_at IS NULL AND (status='FINAL' OR author_id=$2) ORDER BY created_at DESC LIMIT 50",[assignment.id,user.id]);
       const sets=await readSetRows(stored.rows.map(row=>row.id));
-      return json(res,200,{assignment:{id:assignment.id,name:assignment.templateSnapshot.name,status:assignment.status,dueDate:assignment.dueDate,exercises:assignment.templateSnapshot.exercises},logs:stored.rows.map(row=>({id:row.id,authorId:row.author_id,status:row.status,completedCount:row.completed_count,exercises:row.exercises,sets:sets.get(row.id)||[],savedAt:row.created_at,updatedAt:row.updated_at}))});
+      return json(res,200,{assignment:{id:assignment.id,name:assignment.templateSnapshot.name,status:assignment.status,dueDate:assignment.dueDate,exercises:assignment.templateSnapshot.exercises},logs:stored.rows.map(row=>({id:row.id,authorId:row.author_id,status:row.status,completedCount:row.completed_count,exercises:row.exercises,sets:sets.get(row.id)||[],startedAt:row.started_at,durationSeconds:row.duration_seconds,savedAt:row.created_at,updatedAt:row.updated_at}))});
     }
     const key=req.headers['idempotency-key'];
     if(req.method==='POST'){
@@ -1002,33 +1097,47 @@ async function api(req,res,url){
     const completion=exerciseCompletion(body,sets,exerciseCount);
     if(completion===null)return json(res,422,{error:{code:'WORKOUT_INVALID',message:'Workout exercise data is invalid.'}});
     const completedCount=completion.filter(Boolean).length,completionJson=JSON.stringify(completion.map(completed=>({completed}))),savedAt=new Date().toISOString();
+    // Pressing Start stamps the session. A start that is present but not
+    // plausible is refused rather than silently dropped, so a broken clock shows
+    // up as an error instead of as a three-day workout.
+    const reportedStart=body.startedAt==null?null:sessionStart(body.startedAt),reportedStartIso=reportedStart?reportedStart.toISOString():null;
+    if(body.startedAt!=null&&!reportedStart)return json(res,422,{error:{code:'SESSION_START_INVALID',message:'The workout start time is not valid.',field:'startedAt'}});
     if(req.method==='PATCH'){
       // Resumable save: one draft per author per assignment, rewritten in place
       // so a phone that loses signal mid-workout picks up where it stopped.
       const draft=draftKey(assignment.id);
-      const logId=await transaction(async tx=>{
+      const saved=await transaction(async tx=>{
         const existing=await tx('SELECT id FROM workout_logs WHERE author_id=$1 AND idempotency_key=$2',[user.id,draft]);
         const target=existing.rowCount?existing.rows[0].id:id('log');
-        if(existing.rowCount)await tx('UPDATE workout_logs SET exercises=$1,completed_count=$2,updated_at=now() WHERE id=$3',[completionJson,completedCount,target]);
-        else await tx("INSERT INTO workout_logs(id,assigned_workout_id,author_id,idempotency_key,exercises,completed_count,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'DRAFT',$7,$7)",[target,assignment.id,user.id,draft,completionJson,completedCount,savedAt]);
+        // The first start wins: reopening the app mid-session must not reset
+        // the clock the person has been training against.
+        const written=existing.rowCount
+          ?await tx('UPDATE workout_logs SET exercises=$1,completed_count=$2,started_at=COALESCE(started_at,$4),updated_at=now() WHERE id=$3 RETURNING started_at',[completionJson,completedCount,target,reportedStartIso])
+          :await tx("INSERT INTO workout_logs(id,assigned_workout_id,author_id,idempotency_key,exercises,completed_count,status,started_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'DRAFT',$8,$7,$7) RETURNING started_at",[target,assignment.id,user.id,draft,completionJson,completedCount,savedAt,reportedStartIso]);
         await writeSetRows(tx,target,sets);
         if(assignment.status==='ASSIGNED')await tx("UPDATE assigned_workouts SET status='IN_PROGRESS',updated_at=now() WHERE id=$1",[assignment.id]);
-        return target;
+        return {id:target,startedAt:written.rows[0]?.started_at??null};
       });
       if(assignment.status==='ASSIGNED')assignment.status='IN_PROGRESS';
-      return json(res,200,{draft:{id:logId,assignedWorkoutId:assignment.id,status:'DRAFT',completedCount,setCount:sets.length,savedAt}});
+      return json(res,200,{draft:{id:saved.id,assignedWorkoutId:assignment.id,status:'DRAFT',completedCount,setCount:sets.length,startedAt:saved.startedAt,savedAt}});
     }
-    const logId=id('log'),nextStatus=completedCount===exerciseCount?'COMPLETED':'IN_PROGRESS';
-    await transaction(async tx=>{
+    // Finishing closes the session. Any completed set means the workout was
+    // done - the trainer sees exactly how much of it in the sets themselves - so
+    // it no longer sits "in progress" because one accessory was skipped.
+    const logId=id('log'),nextStatus=completedCount>0?'COMPLETED':'IN_PROGRESS';
+    const timing=await transaction(async tx=>{
       // The draft and the submission are the same session, so finishing replaces
       // the draft instead of leaving a second copy of the workout behind.
-      await tx('DELETE FROM workout_logs WHERE author_id=$1 AND idempotency_key=$2',[user.id,draftKey(assignment.id)]);
-      await tx("INSERT INTO workout_logs(id,assigned_workout_id,author_id,idempotency_key,exercises,completed_count,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'FINAL',$7,$7)",[logId,assignment.id,user.id,key,completionJson,completedCount,savedAt]);
+      const removed=await tx('DELETE FROM workout_logs WHERE author_id=$1 AND idempotency_key=$2 RETURNING started_at',[user.id,draftKey(assignment.id)]);
+      const storedStart=removed.rows[0]?.started_at,startedAt=storedStart?new Date(storedStart).toISOString():reportedStartIso;
+      const durationSeconds=sessionDuration(startedAt,savedAt);
+      await tx("INSERT INTO workout_logs(id,assigned_workout_id,author_id,idempotency_key,exercises,completed_count,status,started_at,duration_seconds,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,'FINAL',$8,$9,$7,$7)",[logId,assignment.id,user.id,key,completionJson,completedCount,savedAt,startedAt||null,durationSeconds]);
       await writeSetRows(tx,logId,sets);
       await tx('UPDATE assigned_workouts SET status=$1,updated_at=now() WHERE id=$2',[nextStatus,assignment.id]);
+      return {startedAt:startedAt||null,durationSeconds};
     });
     assignment.status=nextStatus;
-    const result={log:{id:logId,assignedWorkoutId:assignment.id,completedCount,setCount:sets.length,savedAt}};
+    const result={log:{id:logId,assignedWorkoutId:assignment.id,completedCount,setCount:sets.length,startedAt:timing.startedAt,durationSeconds:timing.durationSeconds,savedAt}};
     await audit(user.id,'WORKOUT_LOGGED','workout_log',logId,{assignmentId:assignment.id,completedCount,setCount:sets.length});
     workoutSaves.set(`${user.id}:${key}`,result);
     return json(res,201,result);
@@ -1098,8 +1207,81 @@ async function api(req,res,url){
   }
   if(req.method==='GET'&&url.pathname==='/api/notifications'){const limit=pageLimit(url,50,200),cursor=decodeCursor(url.searchParams.get('cursor'),2);const [result,unread]=await Promise.all([query('SELECT id,event_type,title,body,read_at,created_at FROM notifications WHERE recipient_id=$1 AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3)) ORDER BY created_at DESC, id DESC LIMIT $4',[user.id,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]),query('SELECT count(*)::int AS count FROM notifications WHERE recipient_id=$1 AND read_at IS NULL',[user.id])]);return json(res,200,{notifications:result.rows,unreadCount:Number(unread.rows[0].count),nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])})}
   const notificationRead=url.pathname.match(/^\/api\/notifications\/([A-Za-z0-9_-]{1,64})\/read$/);if(req.method==='POST'&&notificationRead){if(!mutationAllowed(req,res,session))return;const updated=await query('UPDATE notifications SET read_at=now() WHERE id=$1 AND recipient_id=$2 RETURNING id,read_at',[notificationRead[1],user.id]);if(!updated.rowCount)return json(res,404,{error:{code:'NOT_FOUND',message:'Notification not found.'}});return json(res,200,{notification:updated.rows[0]})}
-  if(req.method==='GET'&&url.pathname==='/api/messages'){const relationship=await activeRelationship(user,url.searchParams.get('traineeId'));if(!relationship)return json(res,200,{messages:[],relationship:null});const limit=pageLimit(url,200,500),cursor=decodeCursor(url.searchParams.get('cursor'),2);const result=await query('SELECT m.id,m.sender_id,u.name AS sender_name,m.body,m.read_at,m.created_at FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.relationship_trainer_id=$1 AND m.relationship_trainee_id=$2 AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) ORDER BY m.created_at ASC, m.id ASC LIMIT $5',[relationship.trainerId,relationship.traineeId,cursor?cursor[0]:null,cursor?cursor[1]:null,limit]);return json(res,200,{messages:result.rows,relationship,nextCursor:nextCursorFor(result.rows,limit,row=>[row.created_at,row.id])})}
-  if(req.method==='POST'&&url.pathname==='/api/messages'){if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;const relationship=await activeRelationship(user,body.traineeId);if(!relationship)return json(res,403,{error:{code:'MESSAGE_FORBIDDEN',message:'An active coaching relationship is required.'}});const messageBody=String(body.body||'').trim();if(messageBody.length<1||messageBody.length>2000)return json(res,422,{error:{code:'MESSAGE_INVALID',message:'Message must be 1–2000 characters.'}});if(!rateLimit(`message:${user.id}`,30,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages. Slow down.'}});const message={id:id('message'),sender_id:user.id,sender_name:user.name,body:messageBody,created_at:new Date().toISOString(),read_at:null};await query('INSERT INTO messages(id,relationship_trainer_id,relationship_trainee_id,sender_id,body,created_at) VALUES($1,$2,$3,$4,$5,$6)',[message.id,relationship.trainerId,relationship.traineeId,user.id,message.body,message.created_at]);const recipientId=user.id===relationship.trainerId?relationship.traineeId:relationship.trainerId;await query("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'NEW_MESSAGE',$3,$4)",[id('notification'),recipientId,`New message from ${user.name}`,message.body.slice(0,140)]);return json(res,201,{message})}
+  if(req.method==='GET'&&url.pathname==='/api/messages'){
+    const relationship=await activeRelationship(user,url.searchParams.get('traineeId'));
+    if(!relationship)return json(res,200,{messages:[],relationship:null});
+    const limit=pageLimit(url,200,500),after=decodeCursor(url.searchParams.get('cursor'),2),before=decodeCursor(url.searchParams.get('before'),2);
+    const columns='m.id,m.sender_id,u.name AS sender_name,m.body,m.read_at,m.created_at';
+    // With `cursor` the page runs forward from that message, oldest first. With
+    // no cursor the page is the latest messages - still oldest first, the way a
+    // conversation reads - and `before` walks back through earlier history.
+    // Opening on the oldest page meant a thread past the limit never showed
+    // anything new.
+    let rows;
+    if(after){
+      rows=(await query(`SELECT ${columns} FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.relationship_trainer_id=$1 AND m.relationship_trainee_id=$2 AND (m.created_at, m.id) > ($3, $4) ORDER BY m.created_at ASC, m.id ASC LIMIT $5`,[relationship.trainerId,relationship.traineeId,after[0],after[1],limit])).rows;
+    }else{
+      rows=(await query(`SELECT ${columns} FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.relationship_trainer_id=$1 AND m.relationship_trainee_id=$2 AND ($3::timestamptz IS NULL OR (m.created_at, m.id) < ($3, $4)) ORDER BY m.created_at DESC, m.id DESC LIMIT $5`,[relationship.trainerId,relationship.traineeId,before?before[0]:null,before?before[1]:null,limit])).rows.reverse();
+    }
+    const attachments=await attachmentsFor(rows.map(row=>row.id));
+    const messages=rows.map(row=>({...row,attachments:attachments.get(row.id)||[]}));
+    return json(res,200,{
+      messages,relationship,
+      nextCursor:after?nextCursorFor(rows,limit,row=>[row.created_at,row.id]):null,
+      olderCursor:!after&&rows.length===limit?encodeCursor([rows[0].created_at,rows[0].id]):null
+    });
+  }
+  if(req.method==='POST'&&url.pathname==='/api/messages'){
+    if(!mutationAllowed(req,res,session))return;
+    // Files travel base64-encoded inside the JSON, so this one route reads far
+    // more than the usual 32 KB: the attachment ceiling once encoded, plus room
+    // for the text.
+    const body=await readJson(req,res,Math.ceil(MAX_MESSAGE_ATTACHMENT_BYTES*4/3)+65536);if(!body)return;
+    const relationship=await activeRelationship(user,body.traineeId);
+    if(!relationship)return json(res,403,{error:{code:'MESSAGE_FORBIDDEN',message:'An active coaching relationship is required.'}});
+    const messageBody=String(body.body||'').trim();
+    const files=normalizeAttachments(body.attachments);
+    if(files.error)return json(res,files.error==='ATTACHMENT_TOO_LARGE'?413:422,{error:{code:files.error,message:ATTACHMENT_ERROR_MESSAGES[files.error],field:'attachments'}});
+    if((!messageBody&&!files.attachments.length)||messageBody.length>2000)return json(res,422,{error:{code:'MESSAGE_INVALID',message:'Write a message or attach a file. Messages can be up to 2000 characters.'}});
+    if(!rateLimit(`message:${user.id}`,30,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages. Slow down.'}});
+    if(files.attachments.length&&!rateLimit(`attachments:${user.id}`,ATTACHMENT_MESSAGE_LIMIT,3600000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many messages with files in the last hour. Try again later.'}});
+    const message={id:id('message'),sender_id:user.id,sender_name:user.name,body:messageBody,created_at:new Date().toISOString(),read_at:null,attachments:[]};
+    await transaction(async tx=>{
+      await tx('INSERT INTO messages(id,relationship_trainer_id,relationship_trainee_id,sender_id,body,created_at) VALUES($1,$2,$3,$4,$5,$6)',[message.id,relationship.trainerId,relationship.traineeId,user.id,message.body,message.created_at]);
+      for(const file of files.attachments){
+        const attachmentId=id('att');
+        await tx('INSERT INTO message_attachments(id,message_id,uploader_id,file_name,content_type,byte_size,data,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[attachmentId,message.id,user.id,file.fileName,file.contentType,file.byteSize,file.bytes,message.created_at]);
+        message.attachments.push(publicAttachment({id:attachmentId,file_name:file.fileName,content_type:file.contentType,byte_size:file.byteSize}));
+      }
+    });
+    const recipientId=user.id===relationship.trainerId?relationship.traineeId:relationship.trainerId;
+    const preview=message.body||(files.attachments.every(file=>file.contentType.startsWith('image/'))?`Sent ${files.attachments.length===1?'a photo':`${files.attachments.length} photos`}`:`Sent ${files.attachments.length===1?'a file':`${files.attachments.length} files`}`);
+    await query("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'NEW_MESSAGE',$3,$4)",[id('notification'),recipientId,`New message from ${user.name}`,preview.slice(0,140)]);
+    return json(res,201,{message});
+  }
+  const attachmentMatch=url.pathname.match(/^\/api\/messages\/attachments\/([A-Za-z0-9_-]{1,64})$/);
+  if(req.method==='GET'&&attachmentMatch){
+    const found=await query('SELECT a.id,a.file_name,a.content_type,a.byte_size,a.data,m.relationship_trainer_id,m.relationship_trainee_id FROM message_attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=$1',[attachmentMatch[1]]);
+    const row=found.rows[0];
+    // The same rule as reading the conversation: one of its two people, while
+    // the relationship is active. Anyone else gets the answer an unknown id
+    // gets, so the response never confirms that a file exists.
+    const party=row&&(user.id===row.relationship_trainer_id||user.id===row.relationship_trainee_id);
+    const relationship=party&&await findRelationship(row.relationship_trainer_id,row.relationship_trainee_id);
+    if(!relationship||relationship.status!=='ACTIVE')return json(res,404,{error:{code:'ATTACHMENT_NOT_FOUND',message:'Attachment not found.'}});
+    const bytes=Buffer.from(row.data);
+    // Images display inline; a PDF is always a download, so it opens in the
+    // reader's own viewer rather than as a document on this origin. The sandbox
+    // policy means that even a file that got past the type check could not run
+    // anything if opened directly.
+    securityHeaders(res,{cacheControl:'private, max-age=3600'});
+    res.setHeader('Content-Security-Policy',"sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+    res.setHeader('Content-Type',row.content_type);
+    res.setHeader('Content-Disposition',contentDisposition(row.content_type.startsWith('image/')?'inline':'attachment',row.file_name));
+    res.setHeader('Content-Length',bytes.length);
+    res.statusCode=200;
+    return res.end(bytes);
+  }
   if(req.method==='GET'&&url.pathname==='/api/subscription'){const result=await query('SELECT id,plan_code,status,provider,current_period_end FROM subscriptions WHERE user_id=$1',[user.id]);return json(res,200,{subscription:result.rows[0]||{plan_code:'STARTER',status:'TRIALING',provider:'TEST'}})}
   if(req.method==='POST'&&url.pathname==='/api/billing/test-checkout'){if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;const body=await readJson(req,res);if(!body)return;const plan=String(body.planCode||'');if(!['PRO','TEAM'].includes(plan))return json(res,422,{error:{code:'PLAN_INVALID',message:'Choose a valid paid plan.'}});const subscription={id:id('subscription'),plan_code:plan,status:'ACTIVE',provider:'TEST',current_period_end:new Date(Date.now()+30*86400000).toISOString()};await query("INSERT INTO subscriptions(id,user_id,plan_code,status,provider,current_period_end) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id) DO UPDATE SET plan_code=$3,status=$4,provider=$5,current_period_end=$6,updated_at=now()",[subscription.id,user.id,subscription.plan_code,subscription.status,subscription.provider,subscription.current_period_end]);return json(res,201,{subscription,mode:'TEST',message:'No payment was charged.'})}
   if(url.pathname==='/api/trainer-notes'&&['GET','POST'].includes(req.method)){
@@ -1183,9 +1365,20 @@ async function api(req,res,url){
   return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});
 }
 
-async function serveStatic(req,res,url){const requested=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));const safe=normalize(requested).replace(/^(\.\.(\/|\\|$))+/,'');const path=join(ROOT,safe);if(!path.startsWith(ROOT))return json(res,403,{error:{code:'FORBIDDEN',message:'Invalid path.'}});try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}})}}
+async function serveStatic(req,res,url){const safe=publicFile(url.pathname);if(!safe)return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});const path=join(ROOT,safe);if(!path.startsWith(ROOT))return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl,frameable:safe==='index.html'});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}})}}
 const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}const url=new URL(req.url,APP_ORIGIN);if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
-server.listen(PORT,HOST,()=>log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode(),errorReporting:errorReportingEnabled()?'enabled':'stdout only'}));
+server.listen(PORT,HOST,()=>{
+  log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode(),errorReporting:errorReportingEnabled()?'enabled':'stdout only',email:emailTransport()});
+  // Production refuses to start with mail misconfigured. Elsewhere it is only a
+  // warning, but a loud one: otherwise every confirmation link quietly goes
+  // nowhere and the first sign is a user who never got their email.
+  if(!IS_PRODUCTION){
+    const problem=emailTransport()==='log'?'EMAIL_TRANSPORT is log: confirmation and reset links are printed here, not emailed.':emailConfigProblem();
+    if(problem)log('warn','email_not_delivering',{problem});
+    else if(/^https?:\/\/(localhost|127\.|\[::1\])/.test(APP_ORIGIN))log('warn','email_links_are_local',{appOrigin:APP_ORIGIN,problem:'Emailed links point at this machine and will not open on any other device. Set APP_ORIGIN to the public address.'});
+    log('info','device_preview',{url:`http://${HOST}:${PORT}/preview`});
+  }
+});
 const stopRetentionSweeps=startRetentionSweeps(query,log);
 // The bounded caches evict on access and when they hit their cap. This keeps a
 // quiet process from holding entries nobody will ask for again.

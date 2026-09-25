@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Device preview · Ptrainer</title>
+  <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="preview.css" />
+</head>
+<body>
+  <header class="preview-bar">
+    <div class="preview-title"><img src="assets/ptrainer-logo.svg" alt="" width="24" height="24" /><strong>Device preview</strong></div>
+    <div class="preview-controls">
+      <label class="preview-field">Device
+        <select id="deviceSelect"></select>
+      </label>
+      <button type="button" id="rotateButton" aria-pressed="false" title="Rotate">⟳ Rotate</button>
+      <label class="preview-field">Zoom
+        <select id="zoomSelect">
+          <option value="fit">Fit</option>
+          <option value="1">100%</option>
+          <option value="0.75">75%</option>
+          <option value="0.5">50%</option>
+        </select>
+      </label>
+      <button type="button" id="reloadButton" title="Reload the app">↻ Reload</button>
+      <a class="preview-link" href="/" target="_blank" rel="noopener">Open full app ↗</a>
+    </div>
+  </header>
+  <main class="preview-stage" id="stage">
+    <div class="device" id="device">
+      <div class="device-screen" id="screen">
+        <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="status-icons">▮▮▮ ◔</span></div>
+        <iframe id="appFrame" title="Ptrainer at the selected device size" src="/"></iframe>
+      </div>
+    </div>
+    <p class="preview-caption" id="caption"></p>
+  </main>
+  <p class="preview-note">Shows the real app at each device's screen size, signed in as you. It checks layout, not touch behaviour or Safari quirks: for those, open the app on the phone itself.</p>
+  <script src="preview.js"></script>
+</body>
+</html>

@@ -10,7 +10,56 @@ const cleanEmail = value => typeof value === 'string' ? value.trim().toLowerCase
 const validEmail = value => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const validName = value => typeof value === 'string' && value.trim().length >= 2 && value.trim().length <= 80;
 const validPassword = value => typeof value === 'string' && value.length >= 10 && value.length <= 128 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
-function normalizeWorkoutInput(body){const name=typeof body.name==='string'?body.name.trim():'',description=typeof body.description==='string'?body.description.trim():'',dueDate=String(body.dueDate||'').slice(0,10),parsedDate=dueDate?new Date(`${dueDate}T00:00:00.000Z`):null,validDate=!dueDate||/^\d{4}-\d{2}-\d{2}$/.test(dueDate)&&!Number.isNaN(parsedDate.getTime())&&parsedDate.toISOString().slice(0,10)===dueDate;if(name.length<3||name.length>100||description.length>500||!Array.isArray(body.exercises)||body.exercises.length<1||body.exercises.length>30||!validDate)return null;const exercises=body.exercises.map(item=>({name:String(item.name||'').trim(),sets:Number(item.sets),reps:Number(item.reps),restSeconds:Number(item.restSeconds)}));if(exercises.some(item=>item.name.length<2||item.name.length>100||!Number.isInteger(item.sets)||item.sets<1||item.sets>20||!Number.isInteger(item.reps)||item.reps<1||item.reps>1000||!Number.isInteger(item.restSeconds)||item.restSeconds<0||item.restSeconds>900))return null;return{name,description,dueDate,exercises}}
+function normalizeWorkoutInput(body){const name=typeof body.name==='string'?body.name.trim():'',description=typeof body.description==='string'?body.description.trim():'',dueDate=String(body.dueDate||'').slice(0,10),parsedDate=dueDate?new Date(`${dueDate}T00:00:00.000Z`):null,validDate=!dueDate||/^\d{4}-\d{2}-\d{2}$/.test(dueDate)&&!Number.isNaN(parsedDate.getTime())&&parsedDate.toISOString().slice(0,10)===dueDate;if(name.length<3||name.length>100||description.length>500||!Array.isArray(body.exercises)||body.exercises.length<1||body.exercises.length>30||!validDate)return null;const extras=body.exercises.map(item=>item&&typeof item==='object'?prescriptionExtras(item):null);if(extras.some(item=>item===null))return null;const exercises=body.exercises.map((item,index)=>({name:String(item.name||'').trim(),sets:Number(item.sets),reps:Number(item.reps),restSeconds:Number(item.restSeconds),exerciseId:exerciseIdOrNull(item.exerciseId),...extras[index]}));if(exercises.some(item=>item.name.length<2||item.name.length>100||!Number.isInteger(item.sets)||item.sets<1||item.sets>20||!Number.isInteger(item.reps)||item.reps<1||item.reps>1000||!Number.isInteger(item.restSeconds)||item.restSeconds<0||item.restSeconds>900))return null;return{name,description,dueDate,exercises}}
+// The optional part of a prescription: a target weight and a coaching cue. A
+// weight is only ever stored with its unit, as every measurement is, and a
+// weight without one is refused rather than guessed at. Answers null when
+// something that is present is invalid.
+function prescriptionExtras(item){
+  const raw=item.targetLoad;
+  const targetLoad=raw===''||raw==null?null:Number(raw);
+  const loadUnit=item.loadUnit==null||item.loadUnit===''?null:String(item.loadUnit);
+  if(targetLoad!==null&&(!Number.isFinite(targetLoad)||targetLoad<0||targetLoad>10000))return null;
+  if(targetLoad!==null&&!LOAD_UNITS.has(loadUnit))return null;
+  const note=typeof item.note==='string'?item.note.trim():'';
+  if(note.length>200)return null;
+  return {targetLoad,loadUnit:targetLoad===null?null:loadUnit,note};
+}
+const exerciseIdOrNull=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(value)?value:null;
+// A template's exercise list. Counts are clamped into range rather than
+// refused, which is how templates have always been read; the optional
+// prescription is checked strictly, because a weight in the wrong unit is worse
+// than no weight at all.
+function normalizeTemplateExercises(list){
+  if(!Array.isArray(list)||list.length<1||list.length>30)return null;
+  const exercises=[];
+  for(const item of list){
+    if(!item||typeof item!=='object')return null;
+    const extras=prescriptionExtras(item);
+    if(!extras)return null;
+    const exercise={name:String(item.name||'').trim().slice(0,100),sets:Math.min(20,Math.max(1,Number(item.sets)||1)),reps:Math.min(1000,Math.max(1,Number(item.reps)||1)),restSeconds:Math.min(900,Math.max(0,Number(item.restSeconds)||0)),exerciseId:exerciseIdOrNull(item.exerciseId),...extras};
+    if(exercise.name.length<2)return null;
+    exercises.push(exercise);
+  }
+  return exercises;
+}
+// When a session began, as reported by the device doing it. Accepted only if it
+// is plausible - not in the future beyond clock skew, not more than a day ago -
+// so a timer cannot be used to write a nonsense duration into the record.
+const MAX_SESSION_SECONDS=24*3600;
+function sessionStart(value,now=new Date()){
+  if(typeof value!=='string'||value.length>40)return null;
+  const started=new Date(value);
+  if(Number.isNaN(started.getTime()))return null;
+  const ahead=started.getTime()-now.getTime(),behind=now.getTime()-started.getTime();
+  if(ahead>5*60*1000||behind>MAX_SESSION_SECONDS*1000)return null;
+  return started;
+}
+function sessionDuration(startedAt,finishedAt=new Date()){
+  if(!startedAt)return null;
+  const seconds=Math.round((new Date(finishedAt).getTime()-new Date(startedAt).getTime())/1000);
+  return Number.isFinite(seconds)?Math.min(MAX_SESSION_SECONDS,Math.max(0,seconds)):null;
+}
 const FOOD_DATA_SOURCES=new Set(['OPEN_FOOD_FACTS','PTRAINER_CATALOG']);
 const NUTRITION_ENTRY_TYPES=new Set(['BREAKFAST','LUNCH','DINNER','SNACK','DAILY','WATER']);
 function validDateOnly(value){const text=String(value||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(text))return false;const parsed=new Date(`${text}T00:00:00.000Z`);return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===text}
@@ -198,6 +247,73 @@ function normalizeRelationshipPermissions(value){
   for(const key of RELATIONSHIP_PERMISSION_KEYS)normalized[key]=key in value?Boolean(value[key]):RELATIONSHIP_PERMISSION_DEFAULTS[key];
   return normalized;
 }
+// --- message attachments -----------------------------------------------------
+// A chat attachment is one of a few types, and the type is read from the file's
+// own first bytes rather than trusted from the upload. A file called photo.jpg
+// that is really HTML would otherwise be stored, and later served, as whatever
+// the sender claimed.
+const ATTACHMENT_TYPES=Object.freeze({'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp','image/gif':'.gif','application/pdf':'.pdf'});
+const MAX_ATTACHMENT_BYTES=5*1024*1024;
+const MAX_ATTACHMENTS_PER_MESSAGE=4;
+const MAX_MESSAGE_ATTACHMENT_BYTES=10*1024*1024;
+
+function sniffAttachmentType(bytes){
+  if(!bytes||bytes.length<12)return null;
+  const ascii=(start,end)=>String.fromCharCode(...bytes.subarray(start,end));
+  if(bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff)return 'image/jpeg';
+  if(ascii(1,4)==='PNG'&&bytes[0]===0x89&&bytes[4]===0x0d&&bytes[5]===0x0a&&bytes[6]===0x1a&&bytes[7]===0x0a)return 'image/png';
+  if(ascii(0,6)==='GIF87a'||ascii(0,6)==='GIF89a')return 'image/gif';
+  if(ascii(0,4)==='RIFF'&&ascii(8,12)==='WEBP')return 'image/webp';
+  if(ascii(0,5)==='%PDF-')return 'application/pdf';
+  return null;
+}
+
+// Keeps what a person would recognise, drops anything that could act as a path
+// or break a Content-Disposition header, and makes the extension agree with the
+// type the bytes actually are.
+function attachmentFileName(value,contentType){
+  const stem=String(value||'').normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f"\\/:*?<>|;]+/g,' ')
+    .replace(/\s+/g,' ').trim()
+    .replace(/\.[A-Za-z0-9]{1,5}$/,'')
+    .slice(0,120).trim();
+  return (stem||'attachment')+ATTACHMENT_TYPES[contentType];
+}
+
+// Each item arrives as { name, data } with data base64-encoded (a data: URL
+// prefix is tolerated). Answers { attachments } or { error } with a stable code,
+// so the route decides the status and wording.
+function normalizeAttachments(value){
+  if(value==null)return {attachments:[]};
+  if(!Array.isArray(value))return {error:'ATTACHMENTS_INVALID'};
+  if(value.length>MAX_ATTACHMENTS_PER_MESSAGE)return {error:'TOO_MANY_ATTACHMENTS'};
+  const attachments=[];let total=0;
+  for(const item of value){
+    if(!item||typeof item!=='object'||typeof item.data!=='string')return {error:'ATTACHMENTS_INVALID'};
+    const encoded=item.data.replace(/^data:[a-z0-9.+/-]*;base64,/i,'');
+    // Buffer.from skips characters it cannot decode instead of failing, so
+    // anything outside the alphabet is refused up front.
+    if(!encoded||encoded.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))return {error:'ATTACHMENTS_INVALID'};
+    if(encoded.length/4*3>MAX_ATTACHMENT_BYTES+2)return {error:'ATTACHMENT_TOO_LARGE'};
+    const bytes=Buffer.from(encoded,'base64');
+    if(bytes.length>MAX_ATTACHMENT_BYTES)return {error:'ATTACHMENT_TOO_LARGE'};
+    total+=bytes.length;
+    if(total>MAX_MESSAGE_ATTACHMENT_BYTES)return {error:'ATTACHMENT_TOO_LARGE'};
+    const contentType=sniffAttachmentType(bytes);
+    if(!contentType)return {error:'ATTACHMENT_TYPE_UNSUPPORTED'};
+    attachments.push({fileName:attachmentFileName(item.name,contentType),contentType,byteSize:bytes.length,bytes});
+  }
+  return {attachments};
+}
+
+// Header value for serving an attachment back. The quoted filename is an ASCII
+// fallback for old clients; filename* carries the real name.
+function contentDisposition(disposition,fileName){
+  const fallback=String(fileName).replace(/[^\x20-\x7e]/g,'_').replace(/["\\]/g,'_');
+  const encoded=encodeURIComponent(fileName).replace(/['()*]/g,char=>`%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export {
   todayIn,
   cleanEmail,
@@ -205,6 +321,11 @@ export {
   validName,
   validPassword,
   normalizeWorkoutInput,
+  prescriptionExtras,
+  normalizeTemplateExercises,
+  MAX_SESSION_SECONDS,
+  sessionStart,
+  sessionDuration,
   NUTRITION_ENTRY_TYPES,
   validDateOnly,
   nutritionValues,
@@ -238,5 +359,13 @@ export {
   encodeCursor,
   decodeCursor,
   pageLimit,
-  nextCursorFor
+  nextCursorFor,
+  ATTACHMENT_TYPES,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  MAX_MESSAGE_ATTACHMENT_BYTES,
+  sniffAttachmentType,
+  attachmentFileName,
+  normalizeAttachments,
+  contentDisposition
 };

@@ -26,7 +26,11 @@ To override any default, copy `.env.example` to `.env` at the repository root an
 
 ## Run without Docker
 
-Install dependencies in `app/`, then run `pnpm start`. With no `DATABASE_URL`, Ptrainer uses its persisted local PostgreSQL-compatible database in `data/`. The app opens at `http://127.0.0.1:4173`.
+Install dependencies in `app/`, then run `pnpm start`. It reads `.env` from the repository root when there is one, the same file Docker Compose uses. With no `DATABASE_URL`, Ptrainer uses its persisted local PostgreSQL-compatible database in `data/`. The app opens at `http://127.0.0.1:4173`.
+
+To check the layout at phone sizes, open `http://127.0.0.1:4173/preview` (or **Phone preview** in the sidebar and on the sign-in page). It shows the real app inside an iPhone, Android, iPad or desktop frame; pick the device from the list, rotate, and zoom to fit. It is served only outside production.
+
+To confirm account email is really being delivered, run `pnpm run email:test you@example.com`. With the default `EMAIL_TRANSPORT=log`, links are printed to the server log instead of sent; `.env.example` has the four settings that switch it to Resend.
 
 Demo accounts:
 

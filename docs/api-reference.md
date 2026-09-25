@@ -118,6 +118,22 @@ author per assignment, rewritten in place. A draft is visible only to its author
 finished logs are visible to both parties. Set rows are rejected if they name an
 exercise index the assignment never prescribed.
 
+**Sessions.** Either call may carry `startedAt` (ISO timestamp) — the client
+sends it when the person presses Start. It must be no more than 5 minutes ahead
+of the server clock and no more than 24 hours behind, or the call is
+`422 SESSION_START_INVALID`. On a draft the first start is kept: a later
+`startedAt` does not reset the clock. `POST` computes `durationSeconds` from the
+draft's start (or the one it was sent) and closes the assignment as `COMPLETED`
+when at least one exercise has a completed set. Logs report `startedAt` and
+`durationSeconds`; either may be `null` for sessions logged without Start.
+
+**Prescriptions.** An exercise in a template or assignment may carry
+`targetLoad` with `loadUnit` (`kg` or `lb`) — a load without a unit is
+`422` — and a `note` of up to 200 characters. `exerciseId` is kept only when it
+names a platform exercise or one of the trainer's own; any other id is stored as
+`null`. Each listed assignment carries `latestLog`
+(`{ completedCount, durationSeconds, finishedAt }` or `null`).
+
 ### Progress and nutrition
 
 `GET /api/progress-metrics` · `GET|POST /api/progress-entries` ·
@@ -133,9 +149,29 @@ rejected rather than charted wrongly.
 
 ### Other
 
-`GET|POST /api/messages` · `GET /api/notifications` ·
-`POST /api/notifications/:id/read` · `GET /api/subscription` ·
-`POST /api/billing/test-checkout` (test mode; never charges a card).
+`GET|POST /api/messages` · `GET /api/messages/attachments/:id` ·
+`GET /api/notifications` · `POST /api/notifications/:id/read` ·
+`GET /api/subscription` · `POST /api/billing/test-checkout` (test mode; never
+charges a card).
+
+**Messages.** With no cursor, `GET /api/messages` returns the *latest* page,
+oldest first, plus `olderCursor` when there is more history; pass it back as
+`?before=` to walk backwards. `?cursor=` still pages forward from a message and
+is what a poll uses. A trainer names the conversation with `?traineeId=`.
+
+`POST /api/messages` takes `{ body, traineeId?, attachments? }`. `body` may be
+empty when there is an attachment. `attachments` is up to 4 items of
+`{ name, data }`, `data` base64 (a `data:` URL prefix is accepted): JPEG, PNG,
+WebP, GIF or PDF, judged by the file's bytes, at most 5 MB each and 10 MB per
+message. Errors are `422 ATTACHMENTS_INVALID`, `422 TOO_MANY_ATTACHMENTS`,
+`413 ATTACHMENT_TOO_LARGE`, `422 ATTACHMENT_TYPE_UNSUPPORTED`, each with
+`field: "attachments"`. A message lists its files as
+`{ id, fileName, contentType, byteSize, url }` — never the bytes.
+
+`GET /api/messages/attachments/:id` serves the file to either person in the
+active relationship it was sent in, and `404 ATTACHMENT_NOT_FOUND` to everyone
+else. Images are `inline`, PDFs `attachment`; every response is
+`Content-Security-Policy: sandbox` and `Cache-Control: private, max-age=3600`.
 
 ### Development only
 

@@ -13,7 +13,10 @@ import {
   nutritionValues, normalizeNutritionEntry,
   normalizeExerciseInput, normalizeTrainerNote, normalizeSchedule, normalizeDateWindow,
   normalizeRelationshipPermissions, relationshipPermissions,
-  encodeCursor, decodeCursor
+  encodeCursor, decodeCursor,
+  prescriptionExtras, normalizeTemplateExercises, sessionStart, sessionDuration,
+  sniffAttachmentType, attachmentFileName, normalizeAttachments, contentDisposition,
+  MAX_ATTACHMENT_BYTES
 } from './validation.mjs';
 
 test('validPassword requires length and four character classes', () => {
@@ -238,4 +241,89 @@ test('cursors round-trip and reject anything else', () => {
   assert.equal(decodeCursor(encodeCursor({ not: 'an array' }), 2), null);
   assert.equal(decodeCursor('', 2), null);
   assert.equal(decodeCursor(null, 2), null);
+});
+
+test('a prescription keeps a target weight only with its unit', () => {
+  assert.deepEqual(prescriptionExtras({}), { targetLoad: null, loadUnit: null, note: '' });
+  assert.deepEqual(prescriptionExtras({ targetLoad: '62.5', loadUnit: 'kg', note: ' Pause at the bottom ' }),
+    { targetLoad: 62.5, loadUnit: 'kg', note: 'Pause at the bottom' });
+  assert.equal(prescriptionExtras({ targetLoad: 60 }), null, 'a weight with no unit is refused, not guessed');
+  assert.equal(prescriptionExtras({ targetLoad: 60, loadUnit: 'stone' }), null);
+  assert.equal(prescriptionExtras({ targetLoad: -5, loadUnit: 'kg' }), null);
+  assert.equal(prescriptionExtras({ note: 'x'.repeat(201) }), null);
+  // A unit on its own is harmless and dropped, so an emptied weight field saves.
+  assert.deepEqual(prescriptionExtras({ targetLoad: '', loadUnit: 'lb' }), { targetLoad: null, loadUnit: null, note: '' });
+});
+
+test('template exercises are clamped, and their prescription checked strictly', () => {
+  const [exercise] = normalizeTemplateExercises([{ name: ' Squat ', sets: 99, reps: 0, restSeconds: -1, targetLoad: 100, loadUnit: 'kg', exerciseId: 'ex_1' }]);
+  assert.deepEqual(exercise, { name: 'Squat', sets: 20, reps: 1, restSeconds: 0, exerciseId: 'ex_1', targetLoad: 100, loadUnit: 'kg', note: '' });
+  assert.equal(normalizeTemplateExercises([]), null);
+  assert.equal(normalizeTemplateExercises([{ name: 'S' }]), null, 'a one-letter name');
+  assert.equal(normalizeTemplateExercises([{ name: 'Squat', targetLoad: 100 }]), null, 'a weight without a unit');
+  assert.equal(normalizeTemplateExercises([{ name: 'Squat', exerciseId: '../x' }])[0].exerciseId, null);
+});
+
+test('normalizeWorkoutInput carries the optional prescription too', () => {
+  const good = { name: 'Leg day', exercises: [{ name: 'Back squat', sets: 5, reps: 5, restSeconds: 180, targetLoad: 225, loadUnit: 'lb' }] };
+  assert.equal(normalizeWorkoutInput(good).exercises[0].targetLoad, 225);
+  assert.equal(normalizeWorkoutInput(good).exercises[0].loadUnit, 'lb');
+  assert.equal(normalizeWorkoutInput({ ...good, exercises: [{ ...good.exercises[0], loadUnit: '' }] }), null);
+});
+
+test('a session start has to be plausible, and a duration is bounded', () => {
+  const now = new Date('2026-09-25T12:00:00.000Z');
+  assert.equal(sessionStart('2026-09-25T11:15:00.000Z', now).toISOString(), '2026-09-25T11:15:00.000Z');
+  assert.equal(sessionStart('2026-09-25T12:10:00.000Z', now), null, 'too far in the future');
+  assert.equal(sessionStart('2026-09-23T12:00:00.000Z', now), null, 'more than a day ago');
+  assert.equal(sessionStart('yesterday', now), null);
+  assert.equal(sessionStart(1695643200000, now), null, 'only a timestamp string is accepted');
+  assert.equal(sessionDuration('2026-09-25T11:15:00.000Z', now), 45 * 60);
+  assert.equal(sessionDuration('2026-09-25T12:30:00.000Z', now), 0, 'clock skew never goes negative');
+  assert.equal(sessionDuration(null, now), null);
+});
+
+const bytesOf = (...values) => Buffer.from(values.flat());
+const padded = head => Buffer.concat([Buffer.isBuffer(head) ? head : Buffer.from(head), Buffer.alloc(32)]);
+
+test('attachment types come from the file bytes, never the name', () => {
+  assert.equal(sniffAttachmentType(padded(bytesOf(0xff, 0xd8, 0xff, 0xe0))), 'image/jpeg');
+  assert.equal(sniffAttachmentType(padded(bytesOf(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))), 'image/png');
+  assert.equal(sniffAttachmentType(padded('GIF89a')), 'image/gif');
+  assert.equal(sniffAttachmentType(padded(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')]))), 'image/webp');
+  assert.equal(sniffAttachmentType(padded('%PDF-1.7')), 'application/pdf');
+  assert.equal(sniffAttachmentType(padded('<html><script>')), null, 'markup is never an attachment');
+  assert.equal(sniffAttachmentType(padded('<svg xmlns')), null, 'SVG can carry script, so it is not accepted');
+  assert.equal(sniffAttachmentType(Buffer.from([0xff, 0xd8])), null, 'too short to be anything');
+});
+
+test('attachment names are made safe and agree with the real type', () => {
+  assert.equal(attachmentFileName('../../etc/passwd', 'image/png'), '.. .. etc passwd.png');
+  assert.equal(attachmentFileName('Squat form.HEIC', 'image/jpeg'), 'Squat form.jpg');
+  assert.equal(attachmentFileName('evil"\r\nSet-Cookie: x.pdf', 'application/pdf'), 'evil Set-Cookie x.pdf');
+  assert.equal(attachmentFileName('', 'image/gif'), 'attachment.gif');
+  assert.ok(attachmentFileName('a'.repeat(500), 'image/jpeg').length <= 124);
+});
+
+test('normalizeAttachments enforces count, size and type', () => {
+  const jpeg = padded(bytesOf(0xff, 0xd8, 0xff, 0xe0)).toString('base64');
+  const ok = normalizeAttachments([{ name: 'form.jpg', data: jpeg }]);
+  assert.equal(ok.attachments.length, 1);
+  assert.equal(ok.attachments[0].contentType, 'image/jpeg');
+  assert.equal(ok.attachments[0].byteSize, 36);
+  assert.equal(normalizeAttachments([{ name: 'x.jpg', data: `data:image/jpeg;base64,${jpeg}` }]).attachments.length, 1, 'a data URL prefix is tolerated');
+  assert.deepEqual(normalizeAttachments(undefined), { attachments: [] });
+  assert.equal(normalizeAttachments('nope').error, 'ATTACHMENTS_INVALID');
+  assert.equal(normalizeAttachments(Array(5).fill({ name: 'x.jpg', data: jpeg })).error, 'TOO_MANY_ATTACHMENTS');
+  assert.equal(normalizeAttachments([{ name: 'x.jpg', data: 'not base64!' }]).error, 'ATTACHMENTS_INVALID');
+  assert.equal(normalizeAttachments([{ name: 'x.txt', data: Buffer.from('hello there, plain text').toString('base64') }]).error, 'ATTACHMENT_TYPE_UNSUPPORTED');
+  const big = Buffer.alloc(MAX_ATTACHMENT_BYTES + 3); big[0] = 0xff; big[1] = 0xd8; big[2] = 0xff;
+  assert.equal(normalizeAttachments([{ name: 'big.jpg', data: big.toString('base64') }]).error, 'ATTACHMENT_TOO_LARGE');
+  const four = Buffer.alloc(3 * 1024 * 1024); four[0] = 0xff; four[1] = 0xd8; four[2] = 0xff;
+  assert.equal(normalizeAttachments(Array(4).fill({ name: 'x.jpg', data: four.toString('base64') })).error, 'ATTACHMENT_TOO_LARGE', 'over the per-message total');
+});
+
+test('contentDisposition cannot be broken out of by a file name', () => {
+  assert.equal(contentDisposition('inline', 'form.jpg'), `inline; filename="form.jpg"; filename*=UTF-8''form.jpg`);
+  assert.equal(contentDisposition('attachment', 'Plan (v2) é.pdf'), `attachment; filename="Plan (v2) _.pdf"; filename*=UTF-8''Plan%20%28v2%29%20%C3%A9.pdf`);
 });

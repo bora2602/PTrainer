@@ -31,6 +31,7 @@ const PROTECTED = [
   ['GET', '/api/nutrition-target'], ['POST', '/api/nutrition-target'],
   ['GET', '/api/food-products/3017624010701'], ['GET', '/api/food-products?q=banana'],
   ['GET', '/api/messages'], ['POST', '/api/messages'],
+  ['GET', '/api/messages/attachments/att_probe'],
   ['GET', '/api/notifications'],
   ['GET', '/api/subscription'], ['POST', '/api/billing/test-checkout'],
   ['GET', '/api/trainer-notes'], ['POST', '/api/trainer-notes'],
@@ -98,6 +99,29 @@ rows.push(`${metricsBlocked(proxied) ? 'blocked' : 'LEAK   '} ${proxied.status} 
 rows.push(`${metricsBlocked(cfProxied) ? 'blocked' : 'LEAK   '} ${cfProxied.status}  GET    /metrics (CF-Connecting-IP)`);
 if (!metricsBlocked(proxied)) leaks.push('/metrics is readable through a proxy without a token');
 if (!metricsBlocked(cfProxied)) leaks.push('/metrics is readable through Cloudflare without a token');
+
+// The web server shares a folder with the server source, the migrations, the
+// dependencies and - running without Docker - the database files themselves.
+// Only the named public files may come back; everything else must 404, however
+// the path is spelled.
+const NOT_SERVED = [
+  '/server.mjs', '/validation.mjs', '/package.json', '/pnpm-lock.yaml', '/Dockerfile',
+  '/migrations/001_initial_schema.sql', '/node_modules/pg/package.json',
+  '/data/ptrainer-pgdata/PG_VERSION', '/data/ptrainer-pgdata/global/pg_control',
+  '/scripts/start.mjs', '/.env', '/assets/../server.mjs', '/assets/%2e%2e/server.mjs',
+  '/%2e%2e/.env', '/assets%5c..%5cserver.mjs'
+];
+for (const path of NOT_SERVED) {
+  const response = await fetch(base + path);
+  const served = response.status === 200;
+  rows.push(`${served ? 'LEAK   ' : 'blocked'} ${String(response.status).padEnd(4)} GET    ${path}`);
+  if (served) leaks.push(`GET ${path} served a file that is not public`);
+}
+for (const path of ['/', '/app.js', '/styles.css', '/assets/ptrainer-logo.svg']) {
+  const response = await fetch(base + path);
+  rows.push(`public  ${response.status}  GET    ${path}`);
+  if (response.status !== 200) leaks.push(`GET ${path} should be served but returned ${response.status}`);
+}
 
 console.log(rows.join('\n'));
 console.log(`\n${PROTECTED.length} protected endpoints probed without credentials`);

@@ -25,7 +25,10 @@ export function emailConfigProblem() {
 // Never throws. Mail is a non-critical dependency: a registration, invitation or
 // reset must still complete when the provider is down, so the caller gets a
 // result to report rather than an exception to handle.
-export async function sendEmail({ to, subject, text }, log = () => {}) {
+// `debug` hands the provider's refusal back to the caller. Only the setup check
+// script asks for it; the server never does, because that body can echo the
+// recipient and the message.
+export async function sendEmail({ to, subject, text }, log = () => {}, { debug = false } = {}) {
   const transport = emailTransport();
   if (transport === 'log') {
     log('info', 'email_logged', { to, subject });
@@ -46,13 +49,14 @@ export async function sendEmail({ to, subject, text }, log = () => {}) {
       // The body can echo the recipient and the message, so only the status is
       // recorded here.
       log('warn', 'email_send_failed', { subject, status: response.status });
-      return { delivered: false, transport };
+      const detail = debug ? (await response.text().catch(() => '')).slice(0, 500) : undefined;
+      return { delivered: false, transport, status: response.status, ...(debug ? { detail } : {}) };
     }
     log('info', 'email_sent', { subject, status: response.status });
     return { delivered: true, transport };
   } catch (error) {
     log('warn', 'email_send_failed', { subject, errorName: error.name });
-    return { delivered: false, transport };
+    return { delivered: false, transport, ...(debug ? { detail: `${error.name}: ${error.message}` } : {}) };
   }
 }
 

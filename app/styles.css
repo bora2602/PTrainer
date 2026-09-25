@@ -214,3 +214,277 @@ html[data-theme="light"] .faq-item,html[data-theme="light"] .contact-form{backgr
 .support-privacy{margin:0;color:var(--color-muted);font-size:10px;line-height:1.55}
 
 .calendar-feed-reveal{display:grid;gap:6px;margin-bottom:13px}.calendar-feed-reveal label{font-size:10px;font-weight:750}#calendarFeedUrl{width:100%;border:1px solid var(--color-rule-2);border-radius:var(--radius-input);padding:10px 11px;background:var(--color-paper-2);color:var(--color-ink);font-size:11px;font-family:inherit;min-height:44px}.calendar-feed-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:13px}.calendar-feed-actions button{min-height:44px}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Workout flows, client page, messaging and layout fixes (0.10).
+   Readable on purpose: everything above is minified history; this block is
+   where the next change should start.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Panels whose content sat flush against the border. .panel has no padding of
+   its own, so anything that is not a .panel-header needs its own inset. */
+.coaching-notes > form,
+.coaching-notes > .note-list,
+.pending-invitations > .note-list,
+.chart-panel > .progress-entry-list { padding: 0 20px; }
+.coaching-notes > .note-list,
+.pending-invitations > .note-list { padding-bottom: 20px; }
+.coaching-notes > form { display: grid; gap: 12px; padding-top: 16px; }
+.coaching-notes textarea { width: 100%; min-height: 88px; resize: vertical; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); padding: 11px 12px; font: inherit; font-size: 14px; background: var(--color-paper); color: var(--color-ink); }
+.coaching-notes .primary-button { justify-self: start; min-height: 44px; padding: 0 20px; }
+.note-row p { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.note-row small { font-size: 12px; }
+/* A chart point shrinks instead of pushing the chart past its panel. */
+.chart-point { min-width: 0; }
+.chart-point small { overflow-wrap: anywhere; text-align: center; }
+@media (max-width: 480px) { .line-chart { padding: 20px 12px; gap: 4px; } }
+
+/* Shared bits */
+.back-link { border: 0; background: none; color: var(--color-accent); font: inherit; font-size: 14px; font-weight: 600; padding: 10px 0; min-height: 44px; cursor: pointer; }
+.empty-inline { display: grid; gap: 4px; padding: 18px 20px; color: var(--color-muted); font-size: 14px; }
+.empty-inline strong { color: var(--color-ink); }
+.modal-help { font-size: 13px; line-height: 1.5; color: var(--color-muted); margin: 0 0 8px; }
+.optional { font-weight: 400; color: var(--color-muted); }
+.dev-preview-link { display: block; margin-top: 16px; text-align: center; color: var(--color-accent); font-size: 13px; font-weight: 600; text-decoration: none; }
+a.nav-item { text-decoration: none; }
+
+/* ── Workout library ─────────────────────────────────────────────────────── */
+.workout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.workout-card { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 20px; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-card); min-width: 0; }
+.workout-card.just-saved { border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-weak); }
+.workout-card h3 { margin: 0 0 4px; font-family: var(--font-display); font-weight: 500; font-size: 18px; overflow-wrap: anywhere; }
+.workout-card-body > p { margin: 0; color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
+.workout-card-exercises { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+.workout-card-exercises li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; min-width: 0; }
+.workout-card-exercises li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workout-card-exercises li small { color: var(--color-muted); font-size: 12px; white-space: nowrap; }
+.workout-card-exercises .more-exercises { color: var(--color-muted); }
+.workout-card-actions { display: flex; gap: 8px; align-items: center; }
+.workout-card-actions .primary-button,
+.workout-card-actions .secondary-button { min-height: 44px; padding: 0 18px; font-size: 14px; }
+.workout-card-actions .primary-button { flex: 1; }
+.card-menu { position: relative; margin-left: auto; }
+.card-menu summary { list-style: none; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); cursor: pointer; color: var(--color-muted); }
+.card-menu summary::-webkit-details-marker { display: none; }
+.card-menu-items { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; min-width: 150px; padding: 6px; background: var(--color-paper); border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); box-shadow: var(--shadow-card); display: grid; }
+.card-menu-items button { min-height: 44px; border: 0; background: none; color: var(--color-ink); text-align: left; padding: 0 12px; border-radius: var(--radius-chip); font: inherit; font-size: 14px; cursor: pointer; }
+.card-menu-items button:hover { background: var(--color-paper-3); }
+.card-menu-items .danger { color: var(--color-critical); }
+.exercise-library { margin-top: 22px; }
+.exercise-library > summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px; cursor: pointer; list-style: none; }
+.exercise-library > summary::-webkit-details-marker { display: none; }
+.exercise-library > summary strong, .exercise-library > summary small { display: block; }
+.exercise-library > summary small { color: var(--color-muted); font-size: 12px; margin-top: 3px; }
+.exercise-library[open] .summary-chevron { transform: rotate(180deg); }
+.exercise-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 10px; align-items: end; padding: 0 20px 14px; }
+.exercise-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; }
+.exercise-form input { width: 100%; min-height: 44px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); padding: 0 12px; font: inherit; font-size: 14px; background: var(--color-paper); color: var(--color-ink); }
+.exercise-form .secondary-button { min-height: 44px; }
+.exercise-form .form-error { grid-column: 1 / -1; margin: 0; }
+.exercise-library > .note-list { padding: 0 20px 20px; margin-top: 0; }
+.own-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-chip); background: var(--color-accent-weak); color: var(--color-accent); font-size: 10px; font-weight: 700; vertical-align: middle; }
+.create-exercise-choice strong { color: var(--color-accent); }
+@media (max-width: 720px) { .exercise-form { grid-template-columns: 1fr; } }
+
+/* ── Create / edit workout window ────────────────────────────────────────── */
+.template-modal { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.template-modal > label { display: grid; gap: 7px; font-size: 12px; font-weight: 700; }
+.template-modal > label input, .template-modal > label textarea { min-height: 44px; font-size: 15px; }
+.template-modal .exercise-builder-heading { margin-top: 18px; }
+.builder-exercise-list { display: grid; gap: 10px; margin-top: 10px; }
+/* The older five-column row is replaced by three parts that stack cleanly. */
+.builder-exercise { display: grid; grid-template-columns: none; gap: 12px; align-items: stretch; padding: 14px; margin: 0; border-radius: var(--radius-card); }
+.builder-exercise > .builder-exercise-top { display: flex; gap: 10px; align-items: flex-end; }
+.builder-index { display: grid; place-items: center; flex: 0 0 28px; height: 28px; margin-bottom: 8px; border-radius: 50%; background: var(--color-paper-3); color: var(--color-muted); font-size: 12px; font-weight: 700; }
+.builder-exercise .exercise-name-field { flex: 1; min-width: 0; position: relative; }
+.builder-exercise label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; margin: 0; }
+.builder-exercise input, .builder-exercise select { width: 100%; min-height: 44px; font-size: 15px; }
+.builder-exercise > .builder-exercise-top > .remove-exercise { flex: 0 0 44px; width: 44px; height: 44px; font-size: 20px; }
+.builder-exercise-grid { display: grid; grid-template-columns: 1fr 1fr 1.6fr 1fr; gap: 10px; }
+.builder-exercise .builder-exercise-grid label:first-child { grid-column: auto; }
+.weight-input { display: flex; min-width: 0; }
+.weight-input input { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; min-width: 0; }
+.weight-input select { width: auto; flex: 0 0 auto; border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 0 8px; background: var(--color-paper-2); color: var(--color-ink); border: 1px solid var(--color-rule-2); border-left: 0; }
+.builder-note input { font-size: 14px; }
+.add-exercise-button { width: 100%; min-height: 48px; margin-top: 10px; border-style: dashed; font-size: 14px; }
+.template-modal { padding-bottom: 0; }
+.template-modal .modal-actions { position: sticky; bottom: 0; margin: 22px 0 0; padding: 14px 0 18px; background: var(--color-paper); border-top: 1px solid var(--color-rule); }
+.template-modal .modal-actions button, .assign-modal .modal-actions button, .session-modal .modal-actions button { min-height: 48px; padding: 0 22px; font-size: 15px; }
+@media (max-width: 560px) {
+  .builder-exercise-grid { grid-template-columns: 1fr 1fr; }
+  .modal-card { padding: 22px 18px; }
+  .template-modal .modal-actions button { flex: 1; }
+}
+
+/* ── Assign window ───────────────────────────────────────────────────────── */
+.assign-modal { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.assign-modal select, .assign-modal input[type="date"] { min-height: 44px; width: 100%; font-size: 15px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); padding: 0 12px; background: var(--color-paper); color: var(--color-ink); }
+.assign-clients { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+.assign-clients legend { font-size: 12px; font-weight: 700; padding: 0; margin-bottom: 8px; }
+.assign-modal label.assign-select-all { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; min-height: 40px; font-weight: 600; font-size: 13px; color: var(--color-muted); }
+.assign-client-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.assign-modal label.assign-client { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 12px; margin: 0; padding: 10px 12px; min-height: 56px; border: 1px solid var(--color-rule); border-radius: var(--radius-input); cursor: pointer; font-weight: 400; }
+.assign-client:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-weak); }
+.assign-client strong, .assign-client small { display: block; overflow-wrap: anywhere; }
+.assign-client strong { font-size: 14px; }
+.assign-client small { font-size: 12px; color: var(--color-muted); }
+.assign-modal input[type="checkbox"] { width: 20px; height: 20px; min-height: 20px; accent-color: var(--color-accent); }
+.assign-schedule { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 12px; }
+.assign-modal .modal-actions button[disabled] { cursor: not-allowed; }
+
+/* ── Client's page ───────────────────────────────────────────────────────── */
+.client-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 4px 0 18px; }
+.client-hero > .client-avatar { width: 56px; height: 56px; font-size: 16px; }
+.client-hero-text { flex: 1; min-width: 180px; }
+.client-hero-text h1 { margin: 0; font-family: var(--font-display); font-weight: 500; font-size: clamp(24px, 5vw, 34px); overflow-wrap: anywhere; }
+.client-hero-text p { margin: 4px 0 0; color: var(--color-muted); font-size: 14px; overflow-wrap: anywhere; }
+.client-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.client-hero-actions button { min-height: 44px; padding: 0 18px; font-size: 14px; }
+.client-stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.client-stats-row > div { padding: 14px 16px; border: 1px solid var(--color-rule); border-radius: var(--radius-card); background: var(--color-paper-2); }
+.client-stats-row strong { display: block; font-size: 22px; }
+.client-stats-row span { font-size: 12px; color: var(--color-muted); }
+.client-page-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.client-links { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+.client-links button { min-height: 48px; padding: 0 18px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); background: var(--color-paper-2); color: var(--color-ink); font: inherit; font-size: 14px; cursor: pointer; }
+@media (max-width: 560px) {
+  .client-stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-hero-actions { width: 100%; }
+  .client-hero-actions button { flex: 1; }
+}
+
+/* ── Session lists (client's Workouts tab and the client's page) ─────────── */
+.session-group { margin-top: 22px; }
+.session-group > h2 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 0 0 10px; }
+.session-list { display: grid; }
+.session-group > .session-list { gap: 8px; }
+.session-row { display: flex; align-items: center; gap: 10px; padding-right: 12px; border: 1px solid var(--color-rule); border-radius: var(--radius-card); background: var(--color-paper-2); min-width: 0; }
+.panel .session-row { border-width: 0 0 1px; border-radius: 0; background: none; }
+.session-row.is-overdue { box-shadow: inset 3px 0 0 var(--color-caution); }
+.session-row-main { flex: 1; display: flex; align-items: center; gap: 14px; min-width: 0; min-height: 64px; padding: 12px 0 12px 16px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.session-date { flex: 0 0 76px; display: grid; }
+.session-date strong { font-size: 13px; }
+.session-date small { font-size: 11px; color: var(--color-muted); }
+.is-overdue .session-date small { color: var(--color-caution); }
+.is-done .session-date small { color: var(--color-positive); }
+.session-text { flex: 1; min-width: 0; display: grid; }
+.session-text strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-text small { font-size: 13px; color: var(--color-muted); }
+.session-chevron { color: var(--color-muted); font-size: 20px; }
+.session-row .primary-button, .session-row .secondary-button { min-height: 44px; padding: 0 18px; font-size: 14px; flex: 0 0 auto; }
+@media (max-width: 400px) { .session-date { flex-basis: 58px; } .session-row-main { gap: 10px; padding-left: 12px; } }
+
+/* ── The workout itself ──────────────────────────────────────────────────── */
+.session-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 5; padding: 6px 0; background: var(--color-paper); }
+.session-clock { display: flex; align-items: center; gap: 10px; }
+.session-clock strong { font-variant-numeric: tabular-nums; font-size: 22px; letter-spacing: 0.5px; }
+.session-clock .primary-button { min-height: 44px; padding: 0 22px; }
+.session-title h1 { margin: 6px 0 4px; font-family: var(--font-display); font-weight: 500; font-size: clamp(24px, 6vw, 34px); overflow-wrap: anywhere; }
+.session-title p { margin: 0; color: var(--color-muted); font-size: 14px; }
+.session-help { margin: 12px 0 16px; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
+.session-exercise > header { padding: 16px 16px 10px; }
+.session-exercise h2 { margin: 0; font-size: 17px; font-family: var(--font-display); font-weight: 500; }
+.session-exercise header p { margin: 4px 0 0; font-size: 13px; color: var(--color-muted); }
+.session-exercise .coach-cue { color: var(--color-accent); }
+.set-rows { display: grid; }
+.set-row { display: grid; grid-template-columns: 22px repeat(3, minmax(0, 1fr)) 36px 48px; gap: 6px; align-items: end; padding: 8px 12px; border-top: 1px solid var(--color-rule); }
+.set-row.is-done { background: var(--color-accent-weak); }
+.set-number { align-self: end; line-height: 44px; font-weight: 700; color: var(--color-muted); font-size: 13px; }
+.set-cell { display: grid; gap: 3px; min-width: 0; }
+.set-cell > span { font-size: 11px; color: var(--color-muted); }
+.set-cell input, .set-note input { width: 100%; min-width: 0; min-height: 44px; padding: 0 8px; font-size: 16px; text-align: center; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); background: var(--color-paper); color: var(--color-ink); }
+.set-note input { text-align: left; }
+.set-check, .set-note-toggle { height: 44px; border-radius: var(--radius-input); border: 1px solid var(--color-rule-2); background: var(--color-paper); color: var(--color-muted); font-size: 18px; cursor: pointer; }
+.set-check[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-ink); }
+.set-note-toggle { font-size: 15px; }
+.set-note-toggle.has-note { color: var(--color-accent); border-color: var(--color-accent-line); }
+.set-note { grid-column: 2 / -1; }
+.add-set { margin: 6px 16px 14px; min-height: 44px; font-size: 14px; }
+.session-footer { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); background: var(--color-paper); border-top: 1px solid var(--color-rule); }
+.session-footer-progress { flex: 1; min-width: 0; }
+.session-footer-progress strong { font-size: 14px; }
+.session-footer-progress .progress-track { margin: 6px 0 4px; }
+.session-footer .save-state { font-size: 12px; color: var(--color-muted); }
+.session-footer .primary-button { min-height: 52px; padding: 0 32px; font-size: 16px; }
+@media (max-width: 360px) { .set-row { grid-template-columns: 18px repeat(3, minmax(0, 1fr)) 32px 44px; gap: 4px; padding: 8px; } }
+
+/* ── Session read-back ───────────────────────────────────────────────────── */
+.session-modal { width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.session-detail { display: grid; gap: 16px; }
+.session-detail-exercise header h3 { margin: 0; font-size: 16px; }
+.session-detail-exercise header p { margin: 2px 0 8px; font-size: 12px; color: var(--color-muted); }
+.session-detail .set-table { border: 1px solid var(--color-rule); border-radius: var(--radius-input); border-collapse: separate; overflow: hidden; }
+.session-detail .set-table th, .session-detail .set-table td { padding: 8px 10px; font-size: 13px; text-align: left; }
+.session-detail .set-table th { font-size: 11px; color: var(--color-muted); }
+.session-detail .set-table tr.is-skipped td { color: var(--color-faint); text-decoration: line-through; }
+.skipped-exercise { margin: 0; color: var(--color-faint); font-size: 13px; }
+
+/* ── Messages ────────────────────────────────────────────────────────────── */
+.message-thread-header { padding: 16px 20px; border-bottom: 1px solid var(--color-rule); }
+.message-thread-header h2 { margin: 0; font-size: 16px; font-family: var(--font-display); font-weight: 500; }
+.message-older { display: flex; justify-content: center; }
+.message-older .text-button { margin: 10px 0 0; min-height: 36px; font-size: 13px; }
+.message-bubble { max-width: min(78%, 520px); }
+.message-bubble strong { font-size: 11px; }
+.message-bubble p { font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-bubble small { font-size: 11px; }
+.message-attachments { display: grid; gap: 6px; margin-top: 6px; }
+.message-photo img { display: block; max-width: 100%; max-height: 320px; border-radius: var(--radius-input); object-fit: cover; background: var(--color-paper-3); }
+.message-file { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-input); background: var(--color-paper-3); color: var(--color-ink); text-decoration: none; min-height: 44px; }
+.message-file strong, .message-file small { display: block; overflow-wrap: anywhere; }
+.message-file strong { font-size: 13px; }
+.message-bubble.mine .message-file { background: oklch(0% 0 0 / 0.15); color: inherit; }
+/* minmax(0, …): a textarea's intrinsic width would otherwise set the column's minimum and push Send off a phone screen. */
+.messages-panel form.message-composer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; position: relative; }
+.composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.composer-tool { flex: 0 0 44px; height: 44px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); background: var(--color-paper-2); font-size: 19px; cursor: pointer; }
+.composer-tool[aria-expanded="true"] { border-color: var(--color-accent); }
+.composer-row textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 160px; resize: none; font-size: 15px; line-height: 1.4; padding: 11px 12px; }
+.send-button { min-height: 44px; padding: 0 18px; font-size: 14px; }
+.attachment-tray { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.tray-item { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; max-width: 220px; padding: 6px 34px 6px 6px; border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); background: var(--color-paper-2); }
+.tray-item img, .tray-file { width: 44px; height: 44px; border-radius: var(--radius-chip); object-fit: cover; display: grid; place-items: center; background: var(--color-paper-3); font-size: 20px; }
+.tray-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: grid; }
+.tray-name small { color: var(--color-muted); }
+.tray-remove { position: absolute; top: 2px; right: 2px; width: 30px; height: 30px; border: 0; background: none; color: var(--color-muted); font-size: 18px; cursor: pointer; }
+.emoji-picker { position: absolute; left: 12px; right: 12px; bottom: calc(100% - 4px); z-index: 25; max-height: 300px; overflow: auto; padding: 10px; background: var(--color-paper); border: 1px solid var(--color-rule-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.emoji-group + .emoji-group { margin-top: 8px; }
+.emoji-group-name { display: block; font-size: 11px; font-weight: 700; color: var(--color-muted); margin: 0 4px 4px; }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+.emoji-grid button { height: 44px; border: 0; border-radius: var(--radius-input); background: none; font-size: 24px; cursor: pointer; }
+.emoji-grid button:hover, .emoji-grid button:focus-visible { background: var(--color-paper-3); }
+@media (max-width: 480px) {
+  .message-bubble { max-width: 88%; }
+  .send-button { padding: 0 14px; }
+}
+
+.show-more { display: block; margin: 12px 20px 16px; min-height: 40px; font-size: 13px; }
+/* Your own bubbles sit on the accent fill, so they take the ink the tokens pair with it (9.3:1). The inherited near-white text was about 2:1. */
+.message-bubble.mine, .message-bubble.mine p, .message-bubble.mine strong, .message-bubble.mine small { color: var(--color-accent-ink); }
+
+/* Client cards: as many columns as fit at a width the card's contents need,
+   instead of a fixed count that squeezed four cards into 270px at 1440 and let
+   the status chip and buttons spill past the card edge. */
+.client-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)) !important; }
+.client-profile { grid-template-columns: 42px minmax(0, 1fr) auto; }
+.client-profile > div { min-width: 0; }
+.client-profile h3, .client-profile p { overflow-wrap: anywhere; }
+.client-profile > .status { white-space: nowrap; }
+.client-profile > button { min-height: 44px; }
+/* Nutrition: the side column may shrink below its form's natural width, and
+   the two columns stack while the side one would be too narrow for the form. */
+.nutrition-layout { grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); }
+.nutrition-side, .nutrition-side form, .nutrition-side label { min-width: 0; }
+.nutrition-side input, .nutrition-side select, .nutrition-side textarea { width: 100%; min-width: 0; }
+@media (max-width: 1050px) { .nutrition-layout { grid-template-columns: minmax(0, 1fr); } }
+/* Touch targets: every field and small text button reaches 44px on a phone. */
+@media (max-width: 720px) {
+  input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select { min-height: 44px; }
+  .panel-header button, .text-button, .more { min-height: 44px; min-width: 44px; }
+}
+/* The browser's default dialog max-width (100% - 6px - 2em) is narrower than
+   these cards on a phone, which clipped their right-hand padding. */
+dialog { max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+.template-modal { width: min(760px, calc(100vw - 16px)); }
+.assign-modal { width: min(520px, calc(100vw - 16px)); }
+.session-modal { width: min(640px, calc(100vw - 16px)); }

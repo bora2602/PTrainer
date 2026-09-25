@@ -16,6 +16,9 @@ This document records which infrastructure concepts are appropriate for the curr
 | Encryption | HTTPS is terminated by Caddy; production requires an HTTPS origin. Passwords are one-way hashed. Database volumes, managed database storage, object storage, and backups must have provider-side encryption enabled. Secrets are environment variables and must not be committed. |
 | Reverse proxy | Caddy provides HTTPS, compression, security headers, access logs, and upstream health checks. |
 | Account and relationship reads | Read from the table on every request. The mirrors these replaced were a correctness problem before a memory one: a second replica holding a stale copy would keep letting a suspended account in, or keep honouring a revoked relationship. Accounts are cached for five seconds to keep the hot path off the database, which is short enough that a status change takes effect in seconds rather than never. |
+| Static files | Served from a named allow-list (`index.html`, the scripts and stylesheets, `assets/`), not from whatever is on disk. The app folder also holds the server source, migrations, `node_modules` and, running without Docker, the PGlite data directory, whose files are the database itself; before 2026-09-25 all of it was downloadable. `work/endpoint-exposure-check.mjs` now probes those paths. |
+| Device preview | `/preview` frames the app at phone, tablet and desktop sizes for layout checks. Development only: production does not serve it, and only the app page itself (never an API response) relaxes `frame-ancestors` to `'self'`, and only outside production. |
+| Workout sessions | Pressing Start stamps `workout_logs.started_at` on the draft; Done writes `duration_seconds` and closes the assignment as `COMPLETED` if any set was done. The final log holds only the sets the client ticked, so a trainer reads back what was actually lifted. Before this, an assignment stayed `IN_PROGRESS` unless every exercise was fully ticked. |
 | Caching | Static assets use ETags and a short browser cache; HTML and authenticated API responses use `no-store`. Every in-process cache (sessions, rate-limit buckets, idempotency replays, reset tokens, food lookups) is a bounded LRU with a TTL and a periodic prune, so none of them grows with uptime or traffic. |
 | Polling | Notifications and the open conversation refresh every 20 seconds only while the tab is visible. This is simpler and more reliable than WebSockets for the pilot. |
 | Error logging | JSON request/error logs include a request ID, route, status, and duration without logging message, nutrition, password, or token content. |
@@ -63,10 +66,27 @@ them here rather than quietly treating them as in scope:
 
 | Feature | Status |
 |---|---|
-| In-app messaging | Built and in use. Plan section 2 lists it under later releases, and the open decisions list defaults it to *out*. Needs the maintainer either to move it into scope in the plan document, or to mark it a pilot-only extra to be removed before a wider release. |
-| Test-mode billing | Built, never charges a card. Same question. It is the thinnest possible placeholder: no provider integration, no stored payment details. |
+| In-app messaging | Built and in use. Plan section 2 lists it under later releases, and the open decisions list defaults it to *out*. **Extended on 2026-09-25 by an explicit maintainer decision**: photos, PDFs and emoji (see *Message attachments* below). The plan document still needs its section 2 and 18 lines updated to match; that edit is the maintainer's. |
+| Test-mode billing | Built, never charges a card. It is the thinnest possible placeholder: no provider integration, no stored payment details. Should not be extended until the plan moves it into scope. |
 
-Neither should be extended until that decision is made.
+**Message attachments (decided 2026-09-25).** Photos (JPEG, PNG, WebP, GIF) and
+PDFs, up to 4 per message, 5 MB each and 10 MB per message. The bytes are
+stored in PostgreSQL (`message_attachments.data`, `bytea`) rather than on disk or
+in object storage: the one backup that already exists covers them, PGlite and
+PostgreSQL behave the same, and nothing new has to be provisioned for a pilot.
+Revisit (move to private object storage with signed URLs, per the row above)
+when attachment volume makes database backups slow, or before progress photos
+become a feature. The rules that travel with it:
+
+- The type is read from the file's own first bytes; the name and declared type
+  are ignored. SVG and HTML are never accepted.
+- A file is served only to the two people in an *active* coaching relationship,
+  and everyone else gets the same `404` an unknown id gets.
+- Responses carry `Content-Security-Policy: sandbox`, `nosniff`, and a PDF is
+  always a download, so an opened file cannot run anything on this origin.
+- The browser shrinks and re-encodes photos before upload, which keeps phone
+  photos under the limit and drops camera metadata, including location.
+- Deleting an account deletes the files that person sent.
 
 **Where the calendar sits, and where it stops.** Plan section 2 lists "calendar
 and appointments" under later releases. What shipped is deliberately narrower
@@ -147,7 +167,7 @@ Two smaller decisions inside that one:
 |---|---|
 | Unit | `app/validation.test.mjs` and `app/calendar-feed.test.mjs` via `node --test`. No server, no database. Covers password and date rules, unit conversion, set-row and schedule normalization, permission merging, cursor encoding, and iCalendar escaping, folding and all-day date arithmetic. |
 | Static | `work/accessibility-check.mjs`. Every control named, every dialog named, chart text alternative, live regions, touch targets. Dependency-free on purpose; contrast, focus order and screen-reader phrasing still need a person. |
-| API | Seven suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, calendar date windows, the calendar export feed and its revocation, retention, and pagination. |
+| API | Nine suites in `work/` covering auth, authorization, the workout loop, the exercise library, coaching notes, progress and units, scheduling, calendar date windows, the calendar export feed and its revocation, retention, pagination, message attachments (`messaging-check.mjs`) and the build → assign → start → Done → review session loop (`session-check.mjs`). |
 | End to end | `work/e2e-coaching-journey.mjs` walks the plan's definition of done on accounts created during the run. |
 | Authorization probes | `work/endpoint-exposure-check.mjs` (nothing answers unauthenticated) and `work/cross-account-check.mjs` (no record is reachable by guessing an id). Both now run in CI. |
 
