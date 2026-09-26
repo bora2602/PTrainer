@@ -19,6 +19,7 @@ import {
   MAX_ATTACHMENT_BYTES
 } from './validation.mjs';
 import { servingMacros, nutritionTotals, targetProgress } from './nutrition-math.mjs';
+import { mergeInto, inOrder, isSameRun, dayLabel, compareMessages } from './message-thread.mjs';
 
 test('validPassword requires length and four character classes', () => {
   assert.equal(validPassword('LongEnough1!'), true);
@@ -418,4 +419,76 @@ test('progress against a target is absent, not zero, when either side is unknown
   assert.equal(targetProgress(500, 2000), 25);
   assert.equal(targetProgress(0, 2000), 0);
   assert.equal(targetProgress(5000, 2000), 100, 'the bar stops at full rather than overflowing');
+});
+
+
+/* ── Messaging: how a thread is assembled ────────────────────────────────────
+   The defect these pin down: a refresh used to replace the thread with whatever
+   the latest page held, so history the reader had deliberately loaded vanished
+   under their scroll position. A refresh may only ever add. */
+
+test('a refresh adds to the thread and can never take a message away', () => {
+  const byId = new Map();
+  // the reader opens the conversation, then pulls in older history
+  mergeInto(byId, [{ id: 'm3', created_at: '2026-09-26T10:02:00Z', sender_id: 'a' }]);
+  mergeInto(byId, [{ id: 'm1', created_at: '2026-09-26T10:00:00Z', sender_id: 'a' },
+                   { id: 'm2', created_at: '2026-09-26T10:01:00Z', sender_id: 'b' }]);
+  assert.equal(byId.size, 3);
+  // a poll returns only the latest page, which does not include the old ones
+  const added = mergeInto(byId, [{ id: 'm3', created_at: '2026-09-26T10:02:00Z', sender_id: 'a' },
+                                 { id: 'm4', created_at: '2026-09-26T10:03:00Z', sender_id: 'b' }]);
+  assert.equal(added, 1, 'only the genuinely new message counts as new');
+  assert.equal(byId.size, 4, 'the older history is still there');
+  assert.deepEqual(inOrder(byId).map(m => m.id), ['m1', 'm2', 'm3', 'm4']);
+});
+
+test('a message already in the thread is not replaced by a second copy of itself', () => {
+  const byId = new Map();
+  mergeInto(byId, [{ id: 'm1', created_at: '2026-09-26T10:00:00Z', body: 'full', attachments: [{ id: 'a1' }] }]);
+  mergeInto(byId, [{ id: 'm1', created_at: '2026-09-26T10:00:00Z', body: 'full' }]);
+  assert.equal(byId.size, 1);
+  assert.equal(byId.get('m1').attachments.length, 1, 'a thinner copy must not overwrite a complete one');
+});
+
+test('ordering is total, so messages in the same millisecond cannot swap between renders', () => {
+  const at = '2026-09-26T10:00:00Z';
+  const rows = [{ id: 'b', created_at: at }, { id: 'a', created_at: at }, { id: 'c', created_at: at }];
+  const once = [...rows].sort(compareMessages).map(m => m.id);
+  const again = [...rows].reverse().sort(compareMessages).map(m => m.id);
+  assert.deepEqual(once, ['a', 'b', 'c']);
+  assert.deepEqual(again, once, 'the same set must always render in the same order');
+});
+
+test('merge ignores rubbish rather than poisoning the thread', () => {
+  const byId = new Map();
+  assert.equal(mergeInto(byId, [null, undefined, {}, { id: null }]), 0);
+  assert.equal(mergeInto(byId, null), 0);
+  assert.equal(byId.size, 0);
+});
+
+test('a message with no readable timestamp still sorts somewhere stable', () => {
+  const byId = new Map();
+  mergeInto(byId, [{ id: 'good', created_at: '2026-09-26T10:00:00Z' }, { id: 'bad', created_at: 'not a date' }]);
+  const order = inOrder(byId).map(m => m.id);
+  assert.equal(order.length, 2);
+  assert.deepEqual(order, inOrder(byId).map(m => m.id), 'and sorts the same way every time');
+});
+
+test('consecutive messages from one person group, and a reply does not', () => {
+  const first  = { sender_id: 'a', created_at: '2026-09-26T10:00:00Z' };
+  const second = { sender_id: 'a', created_at: '2026-09-26T10:01:00Z' };
+  const reply  = { sender_id: 'b', created_at: '2026-09-26T10:02:00Z' };
+  const later  = { sender_id: 'a', created_at: '2026-09-26T10:30:00Z' };
+  assert.equal(isSameRun(second, first), true, 'a follow-up a minute later is the same turn');
+  assert.equal(isSameRun(reply, second), false, 'a different person always starts a new turn');
+  assert.equal(isSameRun(later, reply), false, 'half an hour later is a new turn');
+  assert.equal(isSameRun(first, null), false, 'the first message in the thread opens a run');
+});
+
+test('day labels say Today and Yesterday, and date anything older', () => {
+  const now = new Date('2026-09-26T12:00:00Z');
+  assert.equal(dayLabel('2026-09-26T08:00:00Z', now), 'Today');
+  assert.equal(dayLabel('2026-09-25T23:00:00Z', now), 'Yesterday');
+  assert.match(dayLabel('2026-09-01T09:00:00Z', now), /Sep/);
+  assert.equal(dayLabel('nonsense', now), '', 'an unreadable date gets no divider at all');
 });

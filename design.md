@@ -260,6 +260,38 @@ before entering a serving leaves every macro field empty.
   ends up below the fold. A modal also stands the mobile tab bar down.
 - **Rarely-touched settings fold away.** Daily targets sit in a `<details>`.
 
+## Patterns the conversation introduced
+
+- **A refresh may only add.** The thread is a map keyed by message id, merged
+  into on every poll. It used to be replaced by whatever the latest page held,
+  so a reader who loaded 45 messages of history lost them the moment anybody
+  sent anything, with the scroll offset left pointing at different words. The
+  rule and its arithmetic live in
+  [`app/message-thread.mjs`](app/message-thread.mjs).
+- **Tell, do not drag.** A message arriving while somebody is reading further up
+  raises a pill that says how many; it never moves the scroll. Reaching the
+  foot of the thread clears it.
+- **A send is a state, not an event.** In flight, delivered and not-delivered
+  are all visible on the bubble itself, and a failure keeps the words with a
+  retry beside them. Discarding hands the text back to the composer.
+- **Runs, not rows.** Consecutive messages from one person inside five minutes
+  drop the repeated name; a divider carries the day.
+- **Say the rules before the upload.** The composer states the accepted types
+  and the size limit while something is attached, rather than only on refusal.
+
+## Measuring contrast on pixels, not tokens
+
+[`work/contrast-check.mjs`](work/contrast-check.mjs) checks the palette. It
+cannot catch a colour that is correct in isolation and wrong where it lands:
+white text intended for a coral fill, on a bubble whose background a later rule
+had flattened to near-white. That one measured 1.0:1 and shipped.
+
+Contrast is therefore also sampled from the rendered page, by painting each
+computed colour onto a canvas and reading the pixel, compositing every
+translucent layer down to the first opaque one. Regex-scraping numbers out of a
+colour string does not work: `oklch(0.978 0.006 23)` read as an RGB triple
+reports everything as passing.
+
 ## Honesty rules
 
 - **Never invent a metric.** Placeholders render as `—` until the API fills them.

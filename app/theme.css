@@ -1631,6 +1631,181 @@ html[data-theme="dark"] .selected-food { background: var(--color-paper-3); }
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   17c · Messages — a conversation, not a log
+
+   Runs of messages from one person lose the repeated name, a day divider
+   carries the date, and the time sits quietly under the words. A message the
+   server has not taken yet says so on the bubble itself.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Bubbles, settled here rather than left to the older sheet.
+   styles.css sets a coral fill and white text on your own messages, but a
+   leftover `html[data-theme="light"] .message-bubble` rule flattened the
+   background back to paper while the white text stayed - white on near-white,
+   invisible. Both halves are stated together now, at a specificity that wins,
+   so the fill and the text can never drift apart again. */
+.message-bubble,
+html[data-theme="light"] .message-bubble {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  color: var(--color-ink);
+}
+html[data-theme="dark"] .message-bubble { background: var(--color-paper-3); }
+
+html[data-theme="light"] .message-bubble.mine,
+html[data-theme="dark"] .message-bubble.mine,
+.message-bubble.mine {
+  background: var(--color-accent);       /* 5.1:1 against its text in Day */
+  border-color: transparent;
+}
+html[data-theme="dark"] .message-bubble.mine { background: var(--color-brand); }
+.message-bubble.mine,
+.message-bubble.mine p,
+.message-bubble.mine strong,
+.message-bubble.mine small,
+.message-bubble.mine a { color: var(--color-accent-ink); }
+.message-bubble.mine .message-time { color: var(--color-accent-ink); opacity: 0.8; }
+
+/* A failed bubble is never the accent fill: it has to read as a problem, and
+   the accent here is also the colour of a message that went fine. */
+.message-bubble.is-failed,
+.message-bubble.mine.is-failed {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-critical);
+}
+html[data-theme="dark"] .message-bubble.is-failed,
+html[data-theme="dark"] .message-bubble.mine.is-failed { background: var(--color-paper-3); }
+.message-bubble.is-failed,
+.message-bubble.is-failed p,
+.message-bubble.is-failed strong,
+.message-bubble.is-failed small { color: var(--color-ink); }
+
+.messages-panel { display: flex; flex-direction: column; min-height: 0; }
+.message-list { position: relative; }
+
+.message-day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-md) 0 var(--space-xs);
+}
+.message-day::before,
+.message-day::after { content: ""; flex: 1; height: 1px; background: var(--color-rule); }
+.message-day span {
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-faint);
+  white-space: nowrap;
+}
+
+/* A reply to the message above it sits closer and drops the repeated name. */
+.message-bubble.same-run { margin-block-start: var(--space-3xs); }
+.message-bubble .message-time {
+  display: block;
+  font-size: var(--text-2xs);
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+  margin-block-start: var(--space-3xs);
+}
+.message-bubble.mine .message-time { text-align: end; }
+
+/* In flight, and not delivered. Both say so in words as well as in weight. */
+.message-bubble.is-sending { opacity: 0.6; }
+.message-bubble.is-failed .message-time { color: var(--color-critical); }
+.message-retry {
+  display: flex;
+  gap: var(--space-sm);
+  margin-block-start: var(--space-2xs);
+}
+.message-retry .text-button { font-size: var(--text-sm); padding: 0; }
+
+/* Arrivals while somebody is reading further up: an offer, not a jump. */
+.new-message-count {
+  position: sticky;
+  inset-block-end: var(--space-sm);
+  display: block;
+  margin: var(--space-xs) auto 0;
+  padding: var(--space-2xs) var(--space-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-lift);
+  z-index: var(--z-raised);
+}
+.new-message-count:hover { background: var(--color-accent-hi); }
+
+.attachment-hint {
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+  margin: var(--space-2xs) 0 0;
+  line-height: 1.4;
+}
+
+.message-file .icon { width: var(--icon-tab); height: var(--icon-tab); color: var(--color-accent); flex: none; }
+.message-photo img {
+  display: block;
+  max-width: min(22rem, 100%);
+  max-height: 22rem;
+  width: auto;
+  height: auto;              /* a tall photo is never stretched to fill */
+  object-fit: contain;
+  border-radius: var(--radius-input);
+}
+
+.composer-tool .icon { width: var(--icon-tab); height: var(--icon-tab); }
+
+@media (max-width: 720px) {
+  /* The tab bar is fixed over the foot of the screen, so the composer has to
+     end above it rather than behind it - measured, it was losing 28px
+     including part of the text field. The padding sits under the bar; the
+     controls sit above it. */
+  .message-composer {
+    padding-block-end: calc(var(--tabbar-height) + var(--space-sm) + env(safe-area-inset-bottom));
+    background: var(--color-paper);
+  }
+  html[data-theme="dark"] .message-composer { background: var(--color-paper-2); }
+  /* In the logger the tab bar stands down, so the composer does not need the
+     clearance and the thread can use the height instead. */
+  body.in-session .message-composer { padding-block-end: max(var(--space-sm), env(safe-area-inset-bottom)); }
+  .message-list { max-height: 52dvh; }
+}
+
+/* ── Three measured contrast corrections ─────────────────────────────────────
+   Found by sampling the rendered pixels rather than the tokens, which is the
+   only way to catch a colour that is fine in isolation and wrong where it
+   actually lands. */
+
+/* The skip link is the first thing a keyboard reaches and it was ink on the
+   accent fill: 3.5:1 in Day, 2.4:1 in Night. The accent fill has a text colour
+   of its own and this is what it is for. */
+.skip-link {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+/* An accent numeral on an accent-tinted day measured 4.3:1 once the tint was
+   composited over the paper beneath it. The deeper step clears it. */
+.calendar-day-number,
+.calendar-day.assigned .calendar-day-number,
+.calendar-day.selected .calendar-day-number { color: var(--color-accent-hi); }
+.calendar-status { color: var(--color-accent-hi); }
+
+/* 4.47:1 against the sunken tile it sits on - close enough to matter. The
+   light-drop override in styles.css carries an attribute selector, so this has
+   to match it to win. */
+.theme-switch-icon,
+html[data-theme="light"] .theme-switch-icon,
+html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
+
+/* ═══════════════════════════════════════════════════════════════
    18 · Motion — one entrance, nothing loops, nothing decorative
    ═══════════════════════════════════════════════════════════════ */
 
