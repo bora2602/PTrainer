@@ -25,10 +25,18 @@ something on the host has to open it. Either way, then open
 
 That is the entire setup — Compose builds the app, starts PostgreSQL 16, waits for it to become healthy, and applies migrations at startup. No `.env` file and no local Node or pnpm install are needed.
 
-Demo accounts:
+Demo: press **Try trainer demo** or **Try client demo** on the sign-in page — no
+credentials are typed, and none are shipped to the browser. The server picks the
+account; client demos rotate across five sample clients so people exploring at the
+same time do not edit each other's data. Demo accounts cannot email anyone outside
+the demo, change their password, enrol two-factor, or be deleted, and
+`POST /api/demo/reset` (development only) restores the sample data without touching
+real accounts. For scripts and the test suite, the underlying accounts are:
 
 - Trainer: `trainer@ptrainer.local` / `DemoTrainer1!`
-- Trainee: `trainee@ptrainer.local` / `DemoTrainee1!`
+- Client: `trainee@ptrainer.local` / `DemoTrainee1!` (plus `priya@`, `marcus@`, `sofia@`, `ellis@` with the same password)
+
+These exist only outside production; a production start suspends them.
 
 ## Hosting it from one computer
 

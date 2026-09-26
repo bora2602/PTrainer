@@ -20,10 +20,10 @@ choice differs.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Stylesheet order is `fonts` → `tokens` → `styles` → `theme`, and **`theme.css` loads last on purpose** — it is the design system's signature layer and settles any disagreement with the older `styles.css`. Mobile-first; the workout logger must work one-handed on a phone, and below 720px navigation is a bottom tab bar, not the hidden drawer. `app/preview.*` is a development-only device frame at `/preview`. |
+| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/auth.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Stylesheet order is `fonts` → `tokens` → `styles` → `theme`, and **`theme.css` loads last on purpose** — it is the design system's signature layer and settles any disagreement with the older `styles.css`. Mobile-first; the workout logger must work one-handed on a phone, and below 720px navigation is a bottom tab bar, not the hidden drawer. `app/preview.*` is a development-only device frame at `/preview`. |
 | Backend | Node 24 with `node:http` — no web framework | `app/server.mjs`. Modular boundaries are described in §3. |
 | Database | PostgreSQL 16 in production; PGlite for local development | Same SQL either way. Numbered migrations in `app/migrations/`, applied at startup. |
-| Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. |
+| Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. Optional authenticator-app 2FA (`app/totp.mjs`, RFC 6238 on `node:crypto` HMAC, RFC vectors in `totp.test.mjs`) and server-side proof-of-work bot protection (`app/bot-protection.mjs`). No hosted captcha: it would need the CSP opened to a third party. |
 | Mail | Pluggable transport (`app/email.mjs`) | `log` for development, `http` for a provider. Production refuses to start on `log`. |
 | File storage | Message attachments only, as `bytea` in PostgreSQL | Photos and PDFs in messages (maintainer decision, 2026-09-25): 5 MB each, type read from the bytes, served only within an active relationship. Anything larger in scope — progress photos, exercise media — moves to private object storage first; see `docs/architecture-decisions.md`. |
 | Static files | Named allow-list in `server.mjs` (`PUBLIC_FILES`) | A new frontend file is not served until it is added there. Never go back to serving the folder: it holds the source and, without Docker, the database files. |
@@ -46,10 +46,13 @@ One process, organised by module boundary. The intended modules are `identity`,
 `app/server.mjs`. Pure input validation, normalization and unit conversion have
 been extracted into `app/validation.mjs` (which is why they can be unit tested
 without a server), and `email.mjs`, `retention.mjs`, `bounded-map.mjs`,
-`food-lookup.mjs` and `exercise-catalog.mjs` are separate. The routing and
+`food-lookup.mjs`, `exercise-catalog.mjs`, `totp.mjs`, `bot-protection.mjs` and
+`demo.mjs` (demo accounts, sample data, the rotation pool and the scoped reset) are separate. The routing and
 persistence for each domain is not yet split. On the frontend, the workout flows
 (library, assign, client page, session logger) live in `workouts.js` and
-messaging in `messages.js`; everything else is still in `app.js`.
+messaging in `messages.js`, and the signed-out screen (sign-in, signup, second
+factor, reset, demo buttons) plus Settings' two-factor panel in `auth.js`;
+everything else is still in `app.js`.
 
 The target stands, and the way to reach it is to extract a module when you next
 have reason to touch that domain, rather than in one sweeping refactor.
@@ -72,8 +75,10 @@ Tables: `users`, `sessions`, `user_profiles`, `trainer_trainee_relationships`,
 `workout_logs`, `set_logs`, `progress_metrics`, `progress_entries`,
 `nutrition_entries`, `nutrition_targets`, `trainer_notes`, `messages`,
 `message_attachments`, `notifications`, `audit_events`, `privacy_consents`, `password_reset_tokens`,
+`user_two_factor`, `two_factor_recovery_codes`,
 `email_verification_tokens`, `calendar_feed_tokens`, `subscriptions`,
-`schema_migrations`.
+`schema_migrations`. `users.is_demo` marks a demo account; the guards that keep a
+demo inside the demo key on that column, never on the email address.
 
 Two differences from the plan's §8 list, both intentional: `trainer_profiles`
 and `trainee_profiles` are one `user_profiles` table, because the role-specific
@@ -134,6 +139,7 @@ Base pattern from plan §9 (`/api/auth/*`, `/api/me`, `/api/relationships`, `/ap
 - Authorization checks belong in the service layer, backed by DB constraints — never rely on the UI hiding a button as the only control.
 - Nutrition, progress entries, and trainer notes are private by default; visibility is explicit and field-level, not inferred from role alone.
 - Collect only fields a shipped feature actually uses. Emergency contact info, date of birth, and similar fields require a specific justified feature before they're added to a form.
+- **Demo accounts never reach outside the demo.** No password in anything served to the browser (`work/auth-dom-check.mjs` asserts it), no mail to a non-demo address, no credential or 2FA change, no deletion, and resets touch only `is_demo` rows. A new outward-facing route needs a `demoBlocked()` or `demoRecipientBlocked()` decision.
 - Audit log sensitive actions (relationship changes, permission changes, data export, account deletion) with actor, action, entity, entity ID, timestamp — never log the sensitive content itself.
 - This product will likely process personal health information from Canadian users — do not finalize retention/consent/export behavior without legal review of applicable Canadian privacy law (see plan §10). Treat this as a blocking item for launch, not a nice-to-have.
 
@@ -244,7 +250,8 @@ The graph is a map, not a drift check. Tests still are.
 7. Authorization test suite, audit events, backups, deploy pipeline
 8. Pilot, then reprioritize from feedback
 
-Steps 1-7 are implemented. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. **Messaging was then extended by an explicit maintainer decision on 2026-09-25** (photos, PDFs, emoji), which answers open decision #6 in practice; the plan document's §2/§18 lines still need that edit, which is the maintainer's. Billing is still not to be extended — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
+Steps 1-7 are implemented. Two-factor authentication and bot protection were added
+to step 7 on 2026-09-26; neither changes MVP scope. **Messaging and test-mode billing are also built, and both sit outside the plan's MVP boundary** (plan §2 lists them under later releases, and §11 below has messaging as an open decision defaulting to *out*). They shipped before this was noticed. **Messaging was then extended by an explicit maintainer decision on 2026-09-25** (photos, PDFs, emoji), which answers open decision #6 in practice; the plan document's §2/§18 lines still need that edit, which is the maintainer's. Billing is still not to be extended — see [docs/architecture-decisions.md](docs/architecture-decisions.md). Beyond those two, do not build features from plan §2 "Features for later releases" (native apps, in-app messaging, billing, gym/org accounts, food databases, wearables, video, automated insights, public discovery) unless the plan is explicitly updated to move them into MVP scope.
 
 The **calendar view** is a deliberate borderline case, resolved rather than drifted into: plan §2 lists "calendar and appointments" under later releases, but what shipped is only a read-only month view of assignments the MVP already creates — §2's MVP includes "assignment, scheduling" and §6 already specifies "upcoming assignments" on the trainer dashboard. It reads; it writes nothing.
 

@@ -7,6 +7,7 @@
 // one starts from nothing, which is the only way to catch a step that quietly
 // depends on data the seed happened to provide.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -35,7 +36,7 @@ class Person {
     this.email = `e2e_${label}_${stamp}@ptrainer.local`;
     const result = await this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: `E2E ${label}`, email: this.email, password: 'JourneyPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+      body: JSON.stringify({ name: `E2E ${label}`, email: this.email, password: 'JourneyPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...(await challengeFields(this.request.bind(this))) })
     });
     if (result.status === 429) { console.error('Registration rate limit spent; restart the app and rerun.'); process.exit(2); }
     assert.equal(result.status, 201, `${label} could not register`);

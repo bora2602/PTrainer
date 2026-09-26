@@ -53,15 +53,31 @@ Paginated: `progress-entries`, `nutrition-entries`, `messages`, `notifications`,
 
 | Route | Notes |
 |---|---|
-| `POST /api/auth/register` | Requires acceptance of the current notice version. Issues a verification email. |
-| `POST /api/auth/login` | Rotates the session. |
+| `POST /api/auth/challenge` | Body `{purpose}` — `register`, `login` or `reset`. Returns `{nonce, difficulty}`: find a decimal `solution` so that SHA-256 of `nonce:solution` starts with `difficulty` zero bits, and send both as `challengeNonce`/`challengeSolution`. Single-use, five minutes, bound to the purpose and the client address. |
+| `POST /api/auth/register` | Requires acceptance of the current notice version and a solved `register` challenge (checked after validation, before any database read). Issues a verification email. **An address that already has an account gets the same `202 {pending:true}` as a fresh one** and the owner is emailed instead; `409 EMAIL_EXISTS` no longer exists. A new account gets `201` and a session. |
+| `POST /api/auth/login` | Rotates the session. No challenge normally; answers `428 CHALLENGE_REQUIRED` after two failures against one account from one address, or eight from one address against any accounts — solve a `login` challenge and retry. An unknown address costs the same scrypt work as a real one. If the account has two-factor on, the answer is `{twoFactorRequired, ticket}` and **no session**. |
+| `POST /api/auth/2fa` | Body `{ticket, code}` or `{ticket, recoveryCode}`. Spends the ticket (five minutes) for a session. A code is accepted once; a wrong one keeps the ticket, and the per-ticket rate limit discards it. |
+| `POST /api/auth/demo` | Body `{role}` — `trainer` or `client`. Development only (`404` in production). Signs into a demo account with no password; client demos rotate least-recently-used. |
 | `POST /api/auth/logout` | Ends this session. |
 | `POST /api/auth/logout-others` | Ends every other session for the account. Returns `endedCount`. |
-| `POST /api/auth/forgot-password` | Always `202`, whether or not the address exists. |
+| `POST /api/auth/forgot-password` | Always `202`, whether or not the address exists. Requires a solved `reset` challenge. Does nothing for a demo account. |
 | `POST /api/auth/reset-password` | Consumes the token and ends every session. |
 | `POST /api/auth/verify-email` | Single use; a token only verifies the address it was issued for. |
 
 ### Account
+
+Two-factor authentication (authenticator-app codes, RFC 6238):
+
+| Route | Notes |
+|---|---|
+| `GET /api/me/2fa` | `{enabled, enrolling, recoveryCodesRemaining}`. |
+| `POST /api/me/2fa/setup` | Body `{password}`. Returns the secret and an `otpauth://` URI, once. Not in force until confirmed. |
+| `POST /api/me/2fa/confirm` | Body `{code}`. Turns it on, returns ten recovery codes (shown once, stored as digests), signs out other sessions, emails the owner. |
+| `POST /api/me/2fa/recovery-codes` | Body `{password, code \| recoveryCode}`. Replaces the set. |
+| `POST /api/me/2fa/disable` | Body `{password, code \| recoveryCode}`. A recovery code is accepted — losing the phone is the case it exists for. Signs out other sessions, emails the owner. |
+
+All five refuse demo accounts with `403 DEMO_ACCOUNT`, as do account deletion,
+support messages, verification resends, and invitations to anyone outside the demo.
 
 `GET /api/me`, `PATCH /api/me/profile`, `GET /api/me/privacy`,
 `POST /api/me/resend-verification`, `GET /api/me/sessions` (fingerprints only —
@@ -180,6 +196,10 @@ days. The whole block is skipped when `NODE_ENV=production`, so those paths `404
 as if they had never been written, and they still require a session — the
 unauthenticated exposure probe covers them like any other route.
 
+`POST /api/demo/reset` restores the sample data. It sits above the session gate on
+purpose (the person who needs it has usually just signed out of the demo), is rate
+limited, and deletes only rows owned by accounts the database marks `is_demo`.
+
 ## Rate limits
 
 Registration, sign-in, password reset, invitations, messages, barcode and food
@@ -188,3 +208,8 @@ resends, calendar-feed reads and calendar-link creation are all limited. The lim
 application instance only. Registration and sign-in ceilings are relaxed outside
 production so the test suite can run repeatedly; production keeps the tight
 numbers.
+
+Production ceilings added with two-factor and bot protection: sign-in 40 per
+address per 15 minutes across all accounts (on top of 8 per address-and-account),
+challenges 120 per address per 15 minutes, second-factor attempts 8 per pending
+sign-in, demo sessions 30 per address per 15 minutes.

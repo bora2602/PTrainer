@@ -3,6 +3,7 @@
 // to review, and that a forged exercise index cannot write rows the workout
 // never prescribed.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -176,7 +177,8 @@ const registered = await outsider.request('/api/auth/register', {
     password: 'ProbeAccount1!',
     role: 'TRAINEE',
     privacyAccepted: true,
-    privacyNoticeVersion: notice
+    privacyNoticeVersion: notice,
+    ...(await challengeFields(outsider.request.bind(outsider)))
   })
 });
 if (registered.status === 429) {

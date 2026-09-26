@@ -15,6 +15,14 @@ const PUBLIC = [
 const AUTH_ENDPOINTS = [
   ['POST', '/api/auth/login'], ['POST', '/api/auth/register'],
   ['POST', '/api/auth/forgot-password'], ['POST', '/api/auth/reset-password'],
+  // Issuing a bot-protection challenge, and spending one for a second factor,
+  // both happen before anybody is signed in.
+  ['POST', '/api/auth/challenge'], ['POST', '/api/auth/2fa'],
+  // The demo sign-in matters most of all in this list: it is the only route in
+  // the application that hands out a session with no password, so the probe
+  // proves an empty body gets an error rather than somebody's account. In
+  // production it is not routed at all.
+  ['POST', '/api/auth/demo'],
   ['POST', '/api/contact']
 ];
 
@@ -48,7 +56,13 @@ const PROTECTED = [
   // never issued is probed here to prove it refuses rather than answers.
   ['GET', '/api/me/calendar-feed'], ['POST', '/api/me/calendar-feed'],
   ['DELETE', '/api/me/calendar-feed'], ['GET', '/api/me/calendar.ics'],
-  ['GET', `/api/calendar/cal_${'A'.repeat(32)}.ics`]
+  ['GET', `/api/calendar/cal_${'A'.repeat(32)}.ics`],
+  // Two-factor settings are the account's own, so every one of them needs a
+  // session before it will say anything - including the read that reports
+  // whether 2FA is on, which would otherwise disclose how an account is
+  // protected to anybody who asked.
+  ['GET', '/api/me/2fa'], ['POST', '/api/me/2fa/setup'], ['POST', '/api/me/2fa/confirm'],
+  ['POST', '/api/me/2fa/disable'], ['POST', '/api/me/2fa/recovery-codes']
 ];
 
 const anon = await fetch(`${base}/api/session`);
@@ -126,6 +140,7 @@ const PUBLIC_EXPECTATIONS = [
   ['/', 'text/html'],
   ['/app.js', 'javascript'],
   ['/workouts.js', 'javascript'],
+  ['/auth.js', 'javascript'],
   ['/messages.js', 'javascript'],
   ['/nutrition-math.mjs', 'javascript'],
   ['/styles.css', 'text/css'],

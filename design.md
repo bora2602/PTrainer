@@ -247,6 +247,30 @@ server to total a day, by the unit tests, and by the browser to scale a serving.
 A quantity nobody has typed is likewise not a quantity of zero: picking a food
 before entering a serving leaves every macro field empty.
 
+## Patterns the sign-in screen introduced
+
+- **The copy says what the product does, once.** Headline, one description, one
+  supporting line, the real figure row. The three-item proof list is gone: with
+  the supporting line it would have been five stacked claims beside a form.
+- **The figure row is a row.** It had no layout rule and rendered as a bulleted
+  list; `theme.css` now lays it out with hairline separators.
+- **Labels are `for`-linked siblings, not wrappers**, so a password manager and a
+  screen reader read them reliably and the reveal button does not fight a
+  label's click. `.auth-form` is a 14px grid, so a label and its field are pulled
+  back to 7px explicitly.
+- **Show/hide sits inside the field**, in the mono micro tier, with
+  `aria-pressed`; 44px under a coarse pointer.
+- **A failed sign-in keeps the address and clears the password**, marks the field
+  `aria-invalid`, and focuses it. The message is in the form's `role="alert"`.
+- **Security steps say why.** The code screen opens with "Your password was
+  correct"; the 2FA panel says what off means ("your password is the only thing
+  protecting this account") in words, with the dot as a second cue.
+- **A demo is labelled for as long as it lasts** — a status strip across the
+  whole shell (it spans the `.app-shell` grid; as a first child it would take the
+  rail's cell), with a way out named for what it does.
+- **The browser check is invisible unless it is slow.** A button reads
+  "Checking browser…" only past 400 ms.
+
 ## Patterns the nutrition screen introduced
 
 - **Day navigation** (`.day-nav`) - previous, the date itself, next, and Today.

@@ -7,10 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { initializeDatabase, query, transaction, databaseMode, closeDatabase } from './database.mjs';
 import { exerciseCatalog } from './exercise-catalog.mjs';
 import { lookupFoodProduct, normalizeBarcode, searchFoodsByName, normalizeFoodQuery } from './food-lookup.mjs';
-import { sendEmail, emailTransport, emailConfigProblem, verificationEmail, resetEmail, invitationEmail } from './email.mjs';
+import { sendEmail, emailTransport, emailConfigProblem, verificationEmail, resetEmail, invitationEmail, accountExistsEmail, twoFactorChangedEmail } from './email.mjs';
 import { startRetentionSweeps, runRetentionSweep } from './retention.mjs';
 import { buildCalendar } from './calendar-feed.mjs';
 import { BoundedMap } from './bounded-map.mjs';
+import { generateSecret, verifyTotp, otpauthUri, generateRecoveryCodes, normalizeRecoveryCode, TOTP_DIGITS } from './totp.mjs';
+import { createChallengeStore, challengeRequired, loginNeedsChallenge, CHALLENGE_PURPOSES } from './bot-protection.mjs';
+import { seedDemoAccounts, suspendDemoAccounts, resetDemoData, createDemoPool, DEMO_CLIENTS, DEMO_TRAINER, DEMO_EMAILS } from './demo.mjs';
 import { reportError, shouldReport, errorReportingEnabled, errorReportingProblem } from './observability.mjs';
 import {
   todayIn,
@@ -106,6 +109,22 @@ const LOGIN_LIMIT = IS_PRODUCTION ? 8 : 5000;
 // of up to 5 MB, so this is tighter than the plain message limit; the test
 // suite reuses the demo accounts, so development gets headroom.
 const ATTACHMENT_MESSAGE_LIMIT = IS_PRODUCTION ? 20 : 1000;
+// Sign-in attempts per address per quarter hour, regardless of which account is
+// being tried. LOGIN_LIMIT above is per address-and-email, which alone lets one
+// host try eight passwords each against a thousand different emails - a spray
+// that never trips a per-email bucket. This is the ceiling on the whole source.
+const LOGIN_IP_LIMIT = IS_PRODUCTION ? 40 : 20000;
+// Bot-protection challenges per address per quarter hour. Generous, because one
+// visitor legitimately asks for several (a mistyped password, then a reset), and
+// it exists to bound the cost of handing them out rather than to gate anybody.
+const CHALLENGE_LIMIT = IS_PRODUCTION ? 120 : 20000;
+// Demo sessions per address per quarter hour. Only a bound on churn: opening the
+// demo is free and meant to be, but each one rotates a session.
+const DEMO_LIMIT = IS_PRODUCTION ? 30 : 20000;
+// Second-factor attempts per pending sign-in per quarter hour. A six-digit code
+// is a million guesses wide, so this is what keeps it from being brute-forced
+// inside the window where it is valid.
+const TWO_FACTOR_LIMIT = IS_PRODUCTION ? 8 : 2000;
 const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.woff2':'font/woff2' };
 // The only files the web server hands out. The app folder also holds the server
 // source, migrations, package files, node_modules and - when running without
@@ -113,7 +132,7 @@ const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=
 // users, password hashes and live session ids. Serving "whatever is on disk"
 // published all of that to anyone who could reach the port, so the public set
 // is named here and everything else answers 404.
-const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','messages.js','styles.css','tokens.css','theme.css','fonts.css','nutrition-math.mjs','message-thread.mjs','robots.txt']);
+const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','auth.js','messages.js','styles.css','tokens.css','theme.css','fonts.css','nutrition-math.mjs','message-thread.mjs','robots.txt']);
 const PUBLIC_DIRECTORIES = ['assets/'];
 // The device preview frames the app at phone sizes. It is a development aid, so
 // production neither serves it nor relaxes frame-ancestors for it.
@@ -140,13 +159,21 @@ const workoutSaves = new BoundedMap({ maxEntries: 5000, ttlMs: 24 * 60 * 60 * 10
 // per address that ever touched the app.
 const rateBuckets = new BoundedMap({ maxEntries: 50000, ttlMs: 60 * 60 * 1000 });
 const passwordResets = new BoundedMap({ maxEntries: 10000, ttlMs: 60 * 60 * 1000 });
+// Bot-protection challenges, and the failure counts that decide their difficulty.
+const botProtection = createChallengeStore();
+// Between a correct password and a correct authenticator code there is a state
+// that is authenticated for neither: it must not be a session, or the second
+// factor would be optional. It lives here, keyed by a one-time ticket, for five
+// minutes. TTL is the whole expiry mechanism, so an abandoned sign-in simply
+// stops existing.
+const pendingTwoFactor = new BoundedMap({ maxEntries: 20000, ttlMs: 5 * 60 * 1000 });
 const foodProductCache = new BoundedMap({ maxEntries: 5000, ttlMs: 6 * 60 * 60 * 1000 });
 const foodSearchCache = new BoundedMap({ maxEntries: 2000, ttlMs: 30 * 60 * 1000 });
 const telemetry={startedAt:Date.now(),requests:0,errors:0,totalDurationMs:0,byStatus:new Map()};
 
 const id = prefix => `${prefix}_${randomBytes(10).toString('hex')}`;
 const tokenDigest = token => createHash('sha256').update(token).digest('base64url');
-const publicUser = user => ({ id:user.id, name:user.name, email:user.email, role:user.role, emailVerified:Boolean(user.emailVerifiedAt) });
+const publicUser = user => ({ id:user.id, name:user.name, email:user.email, role:user.role, emailVerified:Boolean(user.emailVerifiedAt), demo:Boolean(user.isDemo) });
 async function writeSetRows(tx,logId,sets){
   await tx('DELETE FROM set_logs WHERE workout_log_id=$1',[logId]);
   for(const row of sets)await tx('INSERT INTO set_logs(id,workout_log_id,exercise_index,set_index,completed,reps,load_value,load_unit,duration_seconds,distance_value,distance_unit,rest_seconds,exertion,pain_flag,note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)',[id('set'),logId,row.exerciseIndex,row.setIndex,row.completed,row.reps,row.loadValue,row.loadUnit,row.durationSeconds,row.distanceValue,row.distanceUnit,row.restSeconds,row.exertion,row.painFlag,row.note]);
@@ -169,8 +196,8 @@ async function readSetRows(logIds){
 const USER_CACHE_TTL_MS = 5000;
 const userCache = new BoundedMap({ maxEntries: 5000, ttlMs: USER_CACHE_TTL_MS });
 const emailCache = new BoundedMap({ maxEntries: 5000, ttlMs: USER_CACHE_TTL_MS });
-const userRecord = row => row && { id: row.id, name: row.name, email: row.email, passwordHash: row.password_hash, role: row.role, status: row.status, createdAt: row.created_at, emailVerifiedAt: row.email_verified_at };
-const USER_COLUMNS = 'id,email,password_hash,name,role,status,created_at,email_verified_at';
+const userRecord = row => row && { id: row.id, name: row.name, email: row.email, passwordHash: row.password_hash, role: row.role, status: row.status, createdAt: row.created_at, emailVerifiedAt: row.email_verified_at, isDemo: row.is_demo === true };
+const USER_COLUMNS = 'id,email,password_hash,name,role,status,created_at,email_verified_at,is_demo';
 async function findUserById(id) {
   if (!id) return null;
   const cached = userCache.get(id);
@@ -337,11 +364,17 @@ async function verifyPassword(password, stored) {
   const actual = Buffer.from(await scrypt(password, Buffer.from(saltText, 'base64url'), expected.length, { N:16384, r:8, p:1, maxmem:64*1024*1024 }));
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-async function createUser({ name, email, password, role, privacyNoticeVersion=null }) {
-  const normalizedEmail=cleanEmail(email);const existing=await query('SELECT id,email,password_hash,name,role,status,created_at,email_verified_at FROM users WHERE email=$1',[normalizedEmail]);
-  if(existing.rowCount){const row=existing.rows[0],user={id:row.id,name:row.name,email:row.email,passwordHash:row.password_hash,role:row.role,status:row.status,createdAt:row.created_at,emailVerifiedAt:row.email_verified_at};return user}
-  const user = { id:id('usr'), name:name.trim(), email:cleanEmail(email), passwordHash:await hashPassword(password), role, status:'ACTIVE', createdAt:new Date().toISOString() };
-  const insertUser=tx=>tx('INSERT INTO users(id,email,password_hash,name,role,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$7)',[user.id,user.email,user.passwordHash,user.name,user.role,user.status,user.createdAt]);if(privacyNoticeVersion)await transaction(async tx=>{await insertUser(tx);await tx('INSERT INTO privacy_consents(id,user_id,notice_version,source,accepted_at) VALUES($1,$2,$3,$4,$5)',[id('consent'),user.id,privacyNoticeVersion,'REGISTRATION',user.createdAt])});else await insertUser(query);return user;
+// A real scrypt hash of a password nobody holds. Verifying against it costs
+// exactly what verifying a genuine account costs, which is the point: it is the
+// work, not the result, that has to be indistinguishable. Regenerated every
+// start, because it never needs to match anything.
+const ENUMERATION_DECOY_HASH = await hashPassword(randomBytes(32).toString('base64url'));
+
+async function createUser({ name, email, password, role, privacyNoticeVersion=null, isDemo=false }) {
+  const normalizedEmail=cleanEmail(email);const existing=await query('SELECT id,email,password_hash,name,role,status,created_at,email_verified_at,is_demo FROM users WHERE email=$1',[normalizedEmail]);
+  if(existing.rowCount){const row=existing.rows[0],user={id:row.id,name:row.name,email:row.email,passwordHash:row.password_hash,role:row.role,status:row.status,createdAt:row.created_at,emailVerifiedAt:row.email_verified_at,isDemo:row.is_demo===true};return user}
+  const user = { id:id('usr'), name:name.trim(), email:cleanEmail(email), passwordHash:await hashPassword(password), role, status:'ACTIVE', createdAt:new Date().toISOString(), isDemo };
+  const insertUser=tx=>tx('INSERT INTO users(id,email,password_hash,name,role,status,created_at,updated_at,is_demo) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8)',[user.id,user.email,user.passwordHash,user.name,user.role,user.status,user.createdAt,isDemo]);if(privacyNoticeVersion)await transaction(async tx=>{await insertUser(tx);await tx('INSERT INTO privacy_consents(id,user_id,notice_version,source,accepted_at) VALUES($1,$2,$3,$4,$5)',[id('consent'),user.id,privacyNoticeVersion,'REGISTRATION',user.createdAt])});else await insertUser(query);return user;
 }
 
 await seedExerciseLibrary();
@@ -353,69 +386,12 @@ const storedTemplates=await query('SELECT id,trainer_id,name,description,version
 // local midnight, PGlite at UTC midnight - so a workout due on the 1st comes
 // back as the 31st under one of them. to_char settles it in the database.
 const storedAssignments=await query("SELECT id,template_id,trainer_id,trainee_id,template_snapshot,to_char(due_date,'YYYY-MM-DD') AS due_date,to_char(start_date,'YYYY-MM-DD') AS start_date,to_char(end_date,'YYYY-MM-DD') AS end_date,frequency,series_id,status,created_at FROM assigned_workouts WHERE deleted_at IS NULL");for(const row of storedAssignments.rows)assignments.set(row.id,{id:row.id,templateId:row.template_id,trainerId:row.trainer_id,traineeId:row.trainee_id,templateSnapshot:row.template_snapshot,dueDate:row.due_date,startDate:row.start_date,endDate:row.end_date,frequency:row.frequency,seriesId:row.series_id,status:row.status,createdAt:row.created_at});
-// Every demo account in one list, because the two branches below both need it:
-// the one that creates them outside production, and the one that suspends them
-// in production. Two lists would drift, and the failure mode of drift is an
-// account left live with a password published in this repository.
-const DEMO_TRAINER={name:'Maya Adams',email:'trainer@ptrainer.local',password:'DemoTrainer1!',role:'TRAINER'};
-// The first entry is the account the demo sign-in button uses and the one the
-// rest of the seed hangs its progress, nutrition and workout history on. The
-// others exist so the roster, the client picker and the trainer dashboard are
-// exercised with more than one client - a list of one hides ordering and
-// selection bugs.
-const DEMO_TRAINEES=[
-  {name:'Jordan Lee',email:'trainee@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
-  {name:'Priya Raman',email:'priya@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
-  {name:'Marcus Okafor',email:'marcus@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
-  {name:'Sofia Duarte',email:'sofia@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'},
-  {name:'Ellis Nakamura',email:'ellis@ptrainer.local',password:'DemoTrainee1!',role:'TRAINEE'}
-];
-const DEMO_ACCOUNTS=[DEMO_TRAINER,...DEMO_TRAINEES];
-
-if(!IS_PRODUCTION){
-  const trainer=await createUser(DEMO_TRAINER),demoClients=[];
-  for(const spec of DEMO_TRAINEES)demoClients.push(await createUser(spec));
-  const trainee=demoClients[0];
-  // A previous production start suspends these; running outside production is
-  // what re-enables them, so the two modes stay symmetric.
-  for(const demoUser of [trainer,...demoClients]){
-    if(demoUser.status!=='ACTIVE'){
-      demoUser.status='ACTIVE';forgetUser(demoUser);
-      await query("UPDATE users SET status='ACTIVE',updated_at=now() WHERE id=$1",[demoUser.id]);
-      log('info','demo_account_reactivated',{email:demoUser.email});
-    }
-    if(!demoUser.emailVerifiedAt){
-      demoUser.emailVerifiedAt=new Date().toISOString();
-      await query('UPDATE users SET email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE id=$1',[demoUser.id]);
-    }
-  }
-  // One active trainer per trainee is a database constraint, and these clients
-  // have no other coach, so each connection is safe to create and skipped once
-  // it exists rather than rewritten on every start.
-  for(const client of demoClients){
-    if(await findRelationship(trainer.id,client.id))continue;
-    await query("INSERT INTO trainer_trainee_relationships(trainer_id,trainee_id,status,created_at,updated_at) VALUES($1,$2,'ACTIVE',$3,$3)",[trainer.id,client.id,new Date().toISOString()]);
-    log('info','demo_client_connected',{email:client.email});
-  }
-  let seedTemplate=[...workoutTemplates.values()].find(item=>item.trainerId===trainer.id&&item.name==='Upper Body Strength');if(!seedTemplate){seedTemplate={id:id('tpl'),trainerId:trainer.id,name:'Upper Body Strength',description:'A balanced upper-body strength session.',exercises:[{name:'Barbell bench press',sets:4,reps:8,restSeconds:90},{name:'Single-arm dumbbell row',sets:3,reps:10,restSeconds:75},{name:'Seated shoulder press',sets:3,reps:10,restSeconds:75},{name:'Cable triceps extension',sets:3,reps:12,restSeconds:60}],version:1,createdAt:new Date().toISOString()};await query('INSERT INTO workout_templates(id,trainer_id,name,description,version,exercises,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[seedTemplate.id,seedTemplate.trainerId,seedTemplate.name,seedTemplate.description,seedTemplate.version,JSON.stringify(seedTemplate.exercises),seedTemplate.createdAt]);workoutTemplates.set(seedTemplate.id,seedTemplate)}
-  let seedAssignment=assignments.get('assigned_demo_1');if(!seedAssignment){seedAssignment={id:'assigned_demo_1',templateId:seedTemplate.id,templateSnapshot:structuredClone(seedTemplate),trainerId:trainer.id,traineeId:trainee.id,dueDate:new Date().toISOString().slice(0,10),status:'ASSIGNED',createdAt:new Date().toISOString()};await query('INSERT INTO assigned_workouts(id,template_id,trainer_id,trainee_id,template_snapshot,due_date,status,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[seedAssignment.id,seedAssignment.templateId,seedAssignment.trainerId,seedAssignment.traineeId,JSON.stringify(seedAssignment.templateSnapshot),seedAssignment.dueDate,seedAssignment.status,seedAssignment.createdAt]);assignments.set(seedAssignment.id,seedAssignment)}
-  const progressCount=await query('SELECT count(*)::int AS count FROM progress_entries WHERE trainee_id=$1',[trainee.id]);if(Number(progressCount.rows[0].count)===0){for(const [days,value]of [[56,82.4],[42,81.5],[28,80.8],[14,79.9],[0,79.2]])await query("INSERT INTO progress_entries(id,trainee_id,author_id,metric_type,value,unit,measured_at,note) VALUES($1,$2,$2,'weight',$3,'kg',$4,'')",[id('progress'),trainee.id,value,new Date(Date.now()-days*86400000).toISOString()])}
-  const nutritionCount=await query('SELECT count(*)::int AS count FROM nutrition_entries WHERE trainee_id=$1',[trainee.id]);if(Number(nutritionCount.rows[0].count)===0)await query("INSERT INTO nutrition_entries(id,trainee_id,author_id,entry_date,entry_type,description,calories,protein_g,carbs_g,fat_g,water_ml) VALUES($1,$2,$2,CURRENT_DATE,'DAILY','Balanced training day',1840,132,188,58,2100)",[id('nutrition'),trainee.id]);
-  const notificationCount=await query('SELECT count(*)::int AS count FROM notifications WHERE recipient_id=$1',[trainer.id]);if(Number(notificationCount.rows[0].count)===0)await query("INSERT INTO notifications(id,recipient_id,event_type,title,body) VALUES($1,$2,'PROGRESS_ADDED','New progress update','Jordan logged a new weight entry.'),($3,$2,'WORKOUT_COMPLETED','Workout completed','Jordan completed Upper Body Strength.')",[id('notification'),trainer.id,id('notification')]);
-} else {
-  // A database that was ever started outside production still holds the demo
-  // accounts, and their passwords are published in this repository. Skipping the
-  // seed is not enough - the existing rows have to stop being usable. Suspending
-  // rather than deleting keeps any real data attached to them recoverable.
-  for(const {email} of DEMO_ACCOUNTS){
-    const demoUser=await findUserByEmail(email);
-    if(demoUser&&demoUser.status==='ACTIVE'){
-      demoUser.status='SUSPENDED';forgetUser(demoUser);
-      await query("UPDATE users SET status='SUSPENDED',updated_at=now() WHERE id=$1",[demoUser.id]);
-      log('warn','demo_account_suspended',{email});
-    }
-  }
-}
+// The demo accounts, their sample history and the pool live in demo.mjs; this is
+// only the wiring. See that file for why there is exactly one list of them.
+const demoPool = createDemoPool(DEMO_CLIENTS.map(client => client.email));
+const demoContext = { query, transaction, createUser, id, log, workoutTemplates, assignments, findRelationship, forgetUser, findUserByEmail };
+if(!IS_PRODUCTION) await seedDemoAccounts(demoContext);
+else await suspendDemoAccounts(demoContext);
 
 // Nothing may be framed, with one development exception: the app page itself,
 // by its own origin, because that is how the device preview shows it at phone
@@ -587,22 +563,184 @@ async function activeRelationship(user,requestedTraineeId){
   return user.role==='TRAINER'?active.find(item=>!requestedTraineeId||item.traineeId===requestedTraineeId):active[0]||undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Two-factor authentication, bot protection, and the demo guard.
+// ---------------------------------------------------------------------------
+
+// A recovery code carries ~49 bits of entropy of its own, so it is digested with
+// a fixed domain-separated salt rather than a per-row one: the digest has to be
+// looked up by value, and a per-row salt would mean rehashing every stored code
+// on every attempt. Same reasoning, and the same shape, as the reset tokens.
+const recoveryDigest = code => createHash('sha256').update(`ptrainer-recovery-v1:${normalizeRecoveryCode(code)}`).digest('base64url');
+
+async function twoFactorRecord(userId){
+  const result=await query('SELECT user_id,secret,confirmed_at,last_step FROM user_two_factor WHERE user_id=$1',[userId]);
+  return result.rows[0]||null;
+}
+// Enrolment only counts once it is confirmed with a real code from the app. An
+// unconfirmed row is a setup somebody walked away from, and treating it as
+// active would lock them out of their own account.
+const twoFactorActive = record => Boolean(record&&record.confirmed_at);
+async function twoFactorEnabled(userId){return twoFactorActive(await twoFactorRecord(userId))}
+async function unusedRecoveryCount(userId){
+  const result=await query('SELECT count(*)::int AS count FROM two_factor_recovery_codes WHERE user_id=$1 AND used_at IS NULL',[userId]);
+  return Number(result.rows[0]?.count||0);
+}
+async function replaceRecoveryCodes(userId){
+  const codes=generateRecoveryCodes();
+  await transaction(async tx=>{
+    await tx('DELETE FROM two_factor_recovery_codes WHERE user_id=$1',[userId]);
+    for(const code of codes)await tx('INSERT INTO two_factor_recovery_codes(id,user_id,code_hash) VALUES($1,$2,$3)',[id('recovery'),userId,recoveryDigest(code)]);
+  });
+  return codes;
+}
+// Accepts either a current authenticator code or an unused recovery code, and
+// consumes whichever it was. Returns what was used so the caller can audit it
+// and tell the person how many recovery codes they have left.
+async function consumeSecondFactor(user,record,{code,recoveryCode}){
+  if(recoveryCode){
+    const used=await query('UPDATE two_factor_recovery_codes SET used_at=now() WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL RETURNING id',[user.id,recoveryDigest(recoveryCode)]);
+    if(!used.rowCount)return{ok:false,reason:'RECOVERY_INVALID'};
+    return{ok:true,method:'RECOVERY_CODE',remaining:await unusedRecoveryCount(user.id)};
+  }
+  const outcome=verifyTotp(record.secret,code,{afterStep:Number(record.last_step)});
+  if(!outcome.ok)return{ok:false,reason:outcome.reason};
+  await query('UPDATE user_two_factor SET last_step=$1,updated_at=now() WHERE user_id=$2',[outcome.step,user.id]);
+  return{ok:true,method:'TOTP'};
+}
+
+// The bot-protection gate. Every caller passes the purpose it is guarding, and
+// the source is the client address the rate limiter already keys on. A challenge
+// is only demanded when the policy in bot-protection.mjs says so, so an ordinary
+// sign-in never carries one.
+// `subject` is the account being acted on, when there is one. Sign-in escalates
+// on failures against that account as well as on the volume from the address, so
+// both a slow grind at one login and a wide spray are caught - see
+// loginNeedsChallenge() for why the two thresholds differ.
+function botCheck(req,res,purpose,body,subject=''){
+  const source=String(clientIp(req));
+  const needed=purpose==='login'
+    ? loginNeedsChallenge({accountFailures:subject?botProtection.recentFailures('login',`${source}|${subject}`):0,sourceFailures:botProtection.recentFailures('login',source)})
+    : challengeRequired(purpose);
+  if(!needed)return true;
+  const outcome=botProtection.consume(body?.challengeNonce,body?.challengeSolution,purpose,source);
+  if(!outcome.ok){
+    // 428 rather than 403: the request was understood and is not forbidden, it
+    // simply has to be preceded by a challenge. The client reads this code as
+    // "fetch a challenge and retry" and does so once, without a loop.
+    json(res,428,{error:{code:'CHALLENGE_REQUIRED',message:'Complete the browser check and try again.',reason:outcome.reason}});
+    return false;
+  }
+  return true;
+}
+
+// Demo accounts are real rows, so anything that would reach outside the demo or
+// change what the next visitor finds has to be refused at the route. Reads are
+// untouched: the point of the demo is to look around.
+function demoBlocked(res,user,action){
+  if(!user?.isDemo)return false;
+  json(res,403,{error:{code:'DEMO_ACCOUNT',message:`The demo account cannot ${action}. Create your own account to do that.`}});
+  return true;
+}
+
+// Inviting a client is a real part of what a trainer does, so the demo should be
+// able to show it - what must not happen is mail arriving in a stranger's inbox
+// from a shared account anybody can open. So the rule is about the recipient
+// rather than the feature: a demo trainer may invite another demo account and
+// nobody else. Blocking the route outright would have hidden a core feature to
+// prevent a problem that only the outside address causes.
+function demoRecipientBlocked(res,user,email){
+  if(!user?.isDemo||DEMO_EMAILS.has(email))return false;
+  json(res,403,{error:{code:'DEMO_ACCOUNT',message:'The demo account can only invite the other demo accounts, so no real inbox receives a message from it. Create your own account to invite a real client.'}});
+  return true;
+}
+
 async function authApi(req,res,url,session){
+  // The browser asks for a challenge, solves it, and sends the answer with the
+  // form. Issuing is rate limited too, because handing out challenges is itself
+  // work and an unbounded supply of them is its own small denial of service.
+  if(req.method==='POST'&&url.pathname==='/api/auth/challenge'){
+    if(!mutationAllowed(req,res,session))return true;
+    const body=await readJson(req,res);if(!body)return true;
+    const purpose=String(body.purpose||'');
+    if(!CHALLENGE_PURPOSES.has(purpose)){json(res,422,{error:{code:'CHALLENGE_PURPOSE_INVALID',message:'Unknown challenge purpose.'}});return true}
+    const source=String(clientIp(req));
+    if(!rateLimit(`challenge:${source}`,CHALLENGE_LIMIT,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many attempts. Try again in a few minutes.'}});return true}
+    const {nonce,difficulty}=botProtection.issue(purpose,source);
+    json(res,201,{nonce,difficulty,algorithm:'sha256-leading-zero-bits'});return true;
+  }
   if(req.method==='POST'&&url.pathname==='/api/auth/register'){
     if(!mutationAllowed(req,res,session))return true;if(!rateLimit(`register:${clientIp(req)}`,REGISTRATION_LIMIT,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many registration attempts.'}});return true}
     const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email),role=body.role;
-    if(!validName(body.name)){json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2–80 characters.'}});return true}if(!validEmail(email)){json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});return true}if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}if(!['TRAINER','TRAINEE'].includes(role)){json(res,422,{error:{code:'ROLE_INVALID',message:'Choose trainer or trainee.'}});return true}if(body.privacyAccepted!==true||body.privacyNoticeVersion!==PRIVACY_NOTICE_VERSION){json(res,422,{error:{code:'PRIVACY_CONSENT_REQUIRED',message:'Review and accept the current Privacy Notice to create an account.'}});return true}if(await findUserByEmail(email)){json(res,409,{error:{code:'EMAIL_EXISTS',message:'An account already exists for this email.'}});return true}
+    if(!validName(body.name)){json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2–80 characters.'}});return true}if(!validEmail(email)){json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});return true}if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}if(!['TRAINER','TRAINEE'].includes(role)){json(res,422,{error:{code:'ROLE_INVALID',message:'Choose trainer or trainee.'}});return true}if(body.privacyAccepted!==true||body.privacyNoticeVersion!==PRIVACY_NOTICE_VERSION){json(res,422,{error:{code:'PRIVACY_CONSENT_REQUIRED',message:'Review and accept the current Privacy Notice to create an account.'}});return true}
+    // The bot check sits after validation and before the first database read.
+    // Validation is pure, costs nothing and discloses nothing, so telling a
+    // person their password is too short need not wait on a proof-of-work; the
+    // account lookup and the insert below are the work worth protecting.
+    if(!botCheck(req,res,'register',body))return true;
+    // Anti-enumeration. Answering 409 here told anybody with the form whether an
+    // address has a Ptrainer account, which on a health product is a disclosure
+    // in itself: it says this person has a trainer. So a taken address gets the
+    // same 202 and the same wording as a fresh one, and the owner - the only
+    // person entitled to know - is told by email instead. No session is issued,
+    // so nothing downstream can distinguish the two either.
+    const taken=await findUserByEmail(email);
+    if(taken){
+      await sendEmail({to:email,...accountExistsEmail(taken.name||'there',`${APP_ORIGIN}/`)},log);
+      log('info','registration_duplicate_email',{});
+      json(res,202,{pending:true,message:'Check your email to finish setting up your account.'});return true;
+    }
     const user=await createUser({name:body.name,email,password:body.password,role,privacyNoticeVersion:PRIVACY_NOTICE_VERSION});const next=await rotateSession(res,session,user.id);const verification=await issueEmailVerification(user);json(res,201,{user:publicUser(user),csrfToken:next.csrf,privacyNoticeVersion:PRIVACY_NOTICE_VERSION,emailVerification:verification});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/login'){
-    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);const bucket=`login:${clientIp(req)}:${email}`;
-    if(!rateLimit(bucket,LOGIN_LIMIT,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many sign-in attempts. Try again later.'}});return true}const user=await findUserByEmail(email);const correct=user&&await verifyPassword(String(body.password||''),user.passwordHash);
-    if(!correct||user.status!=='ACTIVE'){await new Promise(resolve=>setTimeout(resolve,180));json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Email or password is incorrect.'}});return true}const next=await rotateSession(res,session,user.id);json(res,200,{user:publicUser(user),csrfToken:next.csrf});return true;
+    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);const source=String(clientIp(req));
+    if(!rateLimit(`login:${source}:${email}`,LOGIN_LIMIT,15*60*1000)||!rateLimit(`login-ip:${source}`,LOGIN_IP_LIMIT,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many sign-in attempts. Try again later.'}});return true}
+    // Ordinary sign-in carries no challenge; two failures from this address turn
+    // one on, and it gets harder from there. The check runs before the password
+    // is looked at so a grinder pays the cost on every attempt, not just the
+    // ones that reach an account.
+    if(!botCheck(req,res,'login',body,email))return true;
+    const user=await findUserByEmail(email);
+    // A missing account used to skip verifyPassword entirely and answer in about
+    // a millisecond, while a real one spent ~100ms in scrypt. That difference is
+    // readable over the network and enumerates the user table just as well as a
+    // distinct error message would. So an unknown address is charged the same
+    // scrypt work against a throwaway hash, and the answer is identical.
+    // Spend the scrypt work unconditionally, then decide - rather than deciding
+    // first and skipping the work, which is what leaked the timing.
+    const passwordMatches=await verifyPassword(String(body.password||''),user?user.passwordHash:ENUMERATION_DECOY_HASH);
+    const correct=Boolean(user)&&passwordMatches;
+    if(!correct||user.status!=='ACTIVE'){
+      botProtection.recordFailure('login',source);
+      botProtection.recordFailure('login',`${source}|${email}`);
+      await new Promise(resolve=>setTimeout(resolve,180));
+      json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Email or password is incorrect.'}});return true;
+    }
+    // The password was right. If this account has a second factor, that is as far
+    // as it gets: no session is issued here, only a short-lived ticket that is
+    // worth nothing without the code. Making this a session and "upgrading" it
+    // later is the mistake that makes 2FA skippable by ignoring the next screen.
+    const enrolment=await twoFactorRecord(user.id);
+    if(twoFactorActive(enrolment)){
+      const ticket=randomBytes(32).toString('base64url');
+      pendingTwoFactor.set(ticket,{userId:user.id,createdAt:Date.now(),source});
+      botProtection.clearFailures('login',`${source}|${email}`);
+      json(res,200,{twoFactorRequired:true,ticket,digits:TOTP_DIGITS,recoveryAvailable:await unusedRecoveryCount(user.id)>0});return true;
+    }
+    // The account's own failure count is cleared; the address-wide one is not,
+    // because one success among many failures is exactly what a spray looks like.
+    botProtection.clearFailures('login',`${source}|${email}`);
+    const next=await rotateSession(res,session,user.id);json(res,200,{user:publicUser(user),csrfToken:next.csrf});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/forgot-password'){
-    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;const email=cleanEmail(body.email);
+    if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;if(!botCheck(req,res,'reset',body))return true;const email=cleanEmail(body.email);
     if(!rateLimit(`password-reset:${clientIp(req)}:${email}`,5,3600000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many reset requests. Try again later.'}});return true}
-    const foundUser=await findUserByEmail(email),userId=foundUser?.id;let demoResetToken=null;
+    // A reset on a demo account would change a credential several visitors are
+    // sharing, so the request is accepted and quietly does nothing. That is the
+    // same answer an address with no account gets, which is the whole point of
+    // the neutral response above.
+    const foundUser=await findUserByEmail(email),userId=foundUser?.isDemo?null:foundUser?.id;let demoResetToken=null;
+    if(foundUser?.isDemo)log('info','demo_password_reset_ignored',{});
     if(userId){const rawToken=randomBytes(32).toString('base64url');const tokenHash=Buffer.from(await scrypt(rawToken,'ptrainer-reset-v1',32)).toString('base64url');const reset={userId,expiresAt:Date.now()+15*60*1000,used:false};passwordResets.set(tokenHash,reset);await query('INSERT INTO password_reset_tokens(token_hash,user_id,expires_at) VALUES($1,$2,$3) ON CONFLICT(token_hash) DO NOTHING',[tokenHash,userId,new Date(reset.expiresAt).toISOString()]);await sendEmail({to:email,...resetEmail(foundUser?.name||'there',`${APP_ORIGIN}/?reset=${rawToken}`)},log);demoResetToken=rawToken}
     json(res,202,{message:'If the account exists, reset instructions have been created.',...(!IS_PRODUCTION&&demoResetToken?{demoResetToken}:{})});return true;
   }
@@ -610,7 +748,9 @@ async function authApi(req,res,url,session){
     if(!mutationAllowed(req,res,session))return true;const body=await readJson(req,res);if(!body)return true;if(!validPassword(body.password)){json(res,422,{error:{code:'PASSWORD_WEAK',message:'Use 10+ characters with upper/lowercase, number, and symbol.'}});return true}
     const rawToken=typeof body.token==='string'?body.token:'';const tokenHash=Buffer.from(await scrypt(rawToken,'ptrainer-reset-v1',32)).toString('base64url');let reset=passwordResets.get(tokenHash);if(!reset){const stored=await query('SELECT user_id,expires_at,used_at FROM password_reset_tokens WHERE token_hash=$1',[tokenHash]);if(stored.rowCount)reset={userId:stored.rows[0].user_id,expiresAt:new Date(stored.rows[0].expires_at).getTime(),used:Boolean(stored.rows[0].used_at)}}
     if(!reset||reset.used||reset.expiresAt<Date.now()){json(res,400,{error:{code:'RESET_TOKEN_INVALID',message:'Reset link is invalid or expired.'}});return true}
-    const user=await findUserById(reset.userId);if(!user){json(res,400,{error:{code:'RESET_TOKEN_INVALID',message:'Reset link is invalid or expired.'}});return true}reset.used=true;user.passwordHash=await hashPassword(body.password);forgetUser(user);await query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[user.passwordHash,user.id]);await query('UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1',[tokenHash]);await destroyUserSessions(user.id);const next=await rotateSession(res,session,null);json(res,200,{message:'Password updated. Sign in with your new password.',csrfToken:next.csrf});return true;
+    // Same rule at the redemption end, so a token minted before this guard - or
+    // by any other path - still cannot land on a demo account.
+    const user=await findUserById(reset.userId);if(!user||user.isDemo){json(res,400,{error:{code:'RESET_TOKEN_INVALID',message:'Reset link is invalid or expired.'}});return true}reset.used=true;user.passwordHash=await hashPassword(body.password);forgetUser(user);await query('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[user.passwordHash,user.id]);await query('UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1',[tokenHash]);await destroyUserSessions(user.id);const next=await rotateSession(res,session,null);json(res,200,{message:'Password updated. Sign in with your new password.',csrfToken:next.csrf});return true;
   }
   if(req.method==='POST'&&url.pathname==='/api/auth/verify-email'){
     if(!mutationAllowed(req,res,session))return true;
@@ -633,13 +773,62 @@ async function authApi(req,res,url,session){
     await audit(target.id,'EMAIL_VERIFIED','user',target.id);
     json(res,200,{user:publicUser(target)});return true;
   }
+  // Step two of sign-in. The ticket from /api/auth/login is spent here for a
+  // session. It is deleted on the first look, so a wrong code costs a whole new
+  // password round trip rather than another guess at the code.
+  if(req.method==='POST'&&url.pathname==='/api/auth/2fa'){
+    if(!mutationAllowed(req,res,session))return true;
+    const body=await readJson(req,res);if(!body)return true;
+    const ticket=typeof body.ticket==='string'?body.ticket:'';
+    const pending=pendingTwoFactor.get(ticket);
+    if(!pending){json(res,401,{error:{code:'TWO_FACTOR_EXPIRED',message:'This sign-in timed out. Enter your password again.'}});return true}
+    if(!rateLimit(`2fa:${ticket}`,TWO_FACTOR_LIMIT,15*60*1000)){pendingTwoFactor.delete(ticket);json(res,429,{error:{code:'RATE_LIMITED',message:'Too many codes tried. Enter your password again.'}});return true}
+    const user=await findUserById(pending.userId),record=user&&await twoFactorRecord(user.id);
+    if(!user||!twoFactorActive(record)||user.status!=='ACTIVE'){pendingTwoFactor.delete(ticket);json(res,401,{error:{code:'TWO_FACTOR_EXPIRED',message:'This sign-in timed out. Enter your password again.'}});return true}
+    const outcome=await consumeSecondFactor(user,record,{code:body.code,recoveryCode:body.recoveryCode});
+    if(!outcome.ok){
+      // The ticket survives a wrong code so a fat-fingered digit does not send
+      // somebody back to the password field; the rate limit above is what bounds
+      // the guessing, and it deletes the ticket when it trips.
+      json(res,401,{error:{code:'TWO_FACTOR_INVALID',message:outcome.reason==='REPLAY'?'That code has already been used. Wait for the next one.':'That code is not right. Check your authenticator app.'}});return true;
+    }
+    pendingTwoFactor.delete(ticket);
+    const next=await rotateSession(res,session,user.id);
+    await audit(user.id,'TWO_FACTOR_SIGN_IN','user',user.id,{method:outcome.method});
+    json(res,200,{user:publicUser(user),csrfToken:next.csrf,...(outcome.method==='RECOVERY_CODE'?{recoveryCodeUsed:true,recoveryCodesRemaining:outcome.remaining}:{})});return true;
+  }
+  // "Try the trainer demo" / "Try the client demo". The password never leaves the
+  // server: app.js used to hold both demo passwords as literals, which meant the
+  // credentials for a live account were served to every visitor and copied into
+  // every page cache. Now the button says which role it wants and the server
+  // picks the account.
+  //
+  // Refused outright in production, where the demo accounts are suspended anyway
+  // - the check is here as well so this route can never be the thing that signs
+  // somebody into a real deployment without a password.
+  if(req.method==='POST'&&url.pathname==='/api/auth/demo'){
+    if(!mutationAllowed(req,res,session))return true;
+    if(IS_PRODUCTION){json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return true}
+    const body=await readJson(req,res);if(!body)return true;
+    const role=String(body.role||'').toLowerCase();
+    if(!['trainer','client'].includes(role)){json(res,422,{error:{code:'DEMO_ROLE_INVALID',message:'Choose the trainer or the client demo.'}});return true}
+    if(!rateLimit(`demo:${clientIp(req)}`,DEMO_LIMIT,15*60*1000)){json(res,429,{error:{code:'RATE_LIMITED',message:'Too many demo sessions from here. Try again in a few minutes.'}});return true}
+    // Clients rotate so two people opening the demo at once are not editing the
+    // same account; the trainer is shared because the sample roster hangs off her.
+    const email=role==='trainer'?DEMO_TRAINER.email:demoPool.take();
+    const demoUser=await findUserByEmail(email);
+    if(!demoUser||demoUser.status!=='ACTIVE'){json(res,503,{error:{code:'DEMO_UNAVAILABLE',message:'The demo accounts are not ready yet. Try again in a moment.'}});return true}
+    const next=await rotateSession(res,session,demoUser.id);
+    log('info','demo_session_opened',{role});
+    json(res,200,{user:publicUser(demoUser),csrfToken:next.csrf,demo:true});return true;
+  }
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){if(!mutationAllowed(req,res,session))return true;await destroySession(session.sid);setSessionCookie(res,'',0);json(res,200,{ok:true});return true}
   return false;
 }
 
 async function api(req,res,url){
   let session=await getSession(req,res);
-  if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION})}
+  if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION,twoFactorEnabled:user?await twoFactorEnabled(user.id):false})}
   if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
   // The calendar feed is reachable without a session, and has to be: Google
   // Calendar and Apple Calendar poll a URL: they cannot send a cookie, and they
@@ -684,6 +873,7 @@ async function api(req,res,url){
     // request claims: a name and address out of the body would let anyone put
     // somebody else's identity on a support message.
     const sender=await sessionUser(session);
+    if(demoBlocked(res,sender,'send support messages'))return;
     const email=sender?sender.email:cleanEmail(body.email),name=sender?sender.name:String(body.name||'').trim();
     const subject=String(body.subject||'').trim(),message=String(body.message||'').trim();
     if(!sender&&!validName(name))return json(res,422,{error:{code:'NAME_INVALID',message:'Name must be 2-80 characters.',field:'name'}});
@@ -730,6 +920,18 @@ async function api(req,res,url){
     return json(res,202,{message:'Thanks - your message has been sent.'});
   }
   if(await authApi(req,res,url,session))return;
+  // Put the demo back the way it ships. Deliberately above the authentication
+  // gate: the person who most needs this is a visitor who has just scribbled on
+  // the demo and signed out, and requiring a session would mean signing into the
+  // account you are trying to reset. Development only, rate limited, and scoped
+  // inside demo.mjs to rows owned by accounts the database marks as demo - so
+  // being reachable without a session still cannot touch a real record.
+  if(!IS_PRODUCTION&&req.method==='POST'&&url.pathname==='/api/demo/reset'){
+    if(!mutationAllowed(req,res,session))return;
+    if(!rateLimit(`demo-reset:${clientIp(req)}`,5,15*60*1000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many resets. Try again in a few minutes.'}});
+    const outcome=await resetDemoData(demoContext);
+    return json(res,200,{reset:true,...outcome});
+  }
   const user=await authenticated(res,session);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/food-products'){
     const searchQuery=normalizeFoodQuery(url.searchParams.get('q'));if(!searchQuery)return json(res,422,{error:{code:'FOOD_QUERY_INVALID',message:'Type at least 2 characters of a food name.'}});if(!rateLimit(`food-search:${user.id}`,60,60000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many food searches. Try again in a minute.'}});
@@ -755,8 +957,91 @@ async function api(req,res,url){
     // The identifier is the credential, so only a short fingerprint is returned.
     return json(res,200,{sessions:rows.rows.map(row=>({id:tokenDigest(row.sid).slice(0,12),current:row.sid===session.sid,createdAt:row.created_at,lastSeen:row.last_seen}))});
   }
+  // ---- Two-factor authentication, from the account's own side. -------------
+  if(req.method==='GET'&&url.pathname==='/api/me/2fa'){
+    const record=await twoFactorRecord(user.id);
+    return json(res,200,{enabled:twoFactorActive(record),enrolling:Boolean(record&&!record.confirmed_at),recoveryCodesRemaining:twoFactorActive(record)?await unusedRecoveryCount(user.id):0,digits:TOTP_DIGITS});
+  }
+  // Step one of enrolment: a secret, shown once, not yet in force. Asking for the
+  // password here means somebody who walks up to an unlocked screen cannot bolt
+  // their own authenticator onto the account.
+  if(req.method==='POST'&&url.pathname==='/api/me/2fa/setup'){
+    if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'turn on two-factor authentication'))return;
+    const body=await readJson(req,res);if(!body)return;
+    if(!rateLimit(`2fa-setup:${user.id}`,10,3600000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many attempts. Try again later.'}});
+    if(!await verifyPassword(String(body.password||''),user.passwordHash))return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});
+    const existing=await twoFactorRecord(user.id);
+    if(twoFactorActive(existing))return json(res,409,{error:{code:'TWO_FACTOR_ALREADY_ON',message:'Two-factor authentication is already on. Turn it off first to enrol a new device.'}});
+    const secret=generateSecret();
+    await query('INSERT INTO user_two_factor(user_id,secret,confirmed_at,last_step) VALUES($1,$2,NULL,-1) ON CONFLICT(user_id) DO UPDATE SET secret=$2,confirmed_at=NULL,last_step=-1,updated_at=now()',[user.id,secret]);
+    // The secret is returned exactly once, here, because the point of enrolment
+    // is to move it into the authenticator app. It is never readable afterwards.
+    return json(res,201,{secret,otpauthUri:otpauthUri({secret,account:user.email}),digits:TOTP_DIGITS});
+  }
+  // Step two: prove the app is actually producing the right codes before anything
+  // starts depending on it. Confirming is what turns 2FA on.
+  if(req.method==='POST'&&url.pathname==='/api/me/2fa/confirm'){
+    if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'turn on two-factor authentication'))return;
+    const body=await readJson(req,res);if(!body)return;
+    if(!rateLimit(`2fa-confirm:${user.id}`,TWO_FACTOR_LIMIT,15*60*1000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many codes tried. Try again later.'}});
+    const record=await twoFactorRecord(user.id);
+    if(!record)return json(res,409,{error:{code:'TWO_FACTOR_NOT_STARTED',message:'Start setting up two-factor authentication first.'}});
+    if(record.confirmed_at)return json(res,409,{error:{code:'TWO_FACTOR_ALREADY_ON',message:'Two-factor authentication is already on.'}});
+    const outcome=verifyTotp(record.secret,body.code,{afterStep:Number(record.last_step)});
+    if(!outcome.ok)return json(res,422,{error:{code:'TWO_FACTOR_INVALID',message:'That code is not right. Check the time on your phone and try the next one.',field:'code'}});
+    await query('UPDATE user_two_factor SET confirmed_at=now(),last_step=$1,updated_at=now() WHERE user_id=$2',[outcome.step,user.id]);
+    const codes=await replaceRecoveryCodes(user.id);
+    // Every other device is signed out: turning on a second factor is a
+    // privilege change, and a session opened before it should not outlive it.
+    await destroyUserSessions(user.id,session.sid);
+    await audit(user.id,'TWO_FACTOR_ENABLED','user',user.id);
+    await sendEmail({to:user.email,...twoFactorChangedEmail(user.name,true)},log);
+    return json(res,200,{enabled:true,recoveryCodes:codes});
+  }
+  // Fresh recovery codes, which invalidates the old set. Needs the password and a
+  // live second factor, because this is the one call that hands out new keys.
+  if(req.method==='POST'&&url.pathname==='/api/me/2fa/recovery-codes'){
+    if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'change two-factor settings'))return;
+    const body=await readJson(req,res);if(!body)return;
+    if(!rateLimit(`2fa-recovery:${user.id}`,TWO_FACTOR_LIMIT,15*60*1000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many attempts. Try again later.'}});
+    const record=await twoFactorRecord(user.id);
+    if(!twoFactorActive(record))return json(res,409,{error:{code:'TWO_FACTOR_OFF',message:'Two-factor authentication is not on.'}});
+    if(!await verifyPassword(String(body.password||''),user.passwordHash))return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});
+    const outcome=await consumeSecondFactor(user,record,{code:body.code,recoveryCode:body.recoveryCode});
+    if(!outcome.ok)return json(res,422,{error:{code:'TWO_FACTOR_INVALID',message:'That code is not right.',field:'code'}});
+    const codes=await replaceRecoveryCodes(user.id);
+    await audit(user.id,'TWO_FACTOR_RECOVERY_CODES_REPLACED','user',user.id);
+    return json(res,200,{recoveryCodes:codes});
+  }
+  // Turning it off is a privilege change too, so it costs the password *and* a
+  // working second factor. A recovery code is accepted, because "my phone is
+  // gone" is precisely when somebody needs this and the codes are what that case
+  // was designed for.
+  if(req.method==='POST'&&url.pathname==='/api/me/2fa/disable'){
+    if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'change two-factor settings'))return;
+    const body=await readJson(req,res);if(!body)return;
+    if(!rateLimit(`2fa-disable:${user.id}`,TWO_FACTOR_LIMIT,15*60*1000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many attempts. Try again later.'}});
+    const record=await twoFactorRecord(user.id);
+    if(!twoFactorActive(record))return json(res,409,{error:{code:'TWO_FACTOR_OFF',message:'Two-factor authentication is not on.'}});
+    if(!await verifyPassword(String(body.password||''),user.passwordHash))return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});
+    const outcome=await consumeSecondFactor(user,record,{code:body.code,recoveryCode:body.recoveryCode});
+    if(!outcome.ok)return json(res,422,{error:{code:'TWO_FACTOR_INVALID',message:'That code is not right.',field:'code'}});
+    await transaction(async tx=>{
+      await tx('DELETE FROM two_factor_recovery_codes WHERE user_id=$1',[user.id]);
+      await tx('DELETE FROM user_two_factor WHERE user_id=$1',[user.id]);
+    });
+    await destroyUserSessions(user.id,session.sid);
+    await audit(user.id,'TWO_FACTOR_DISABLED','user',user.id,{method:outcome.method});
+    await sendEmail({to:user.email,...twoFactorChangedEmail(user.name,false)},log);
+    return json(res,200,{enabled:false});
+  }
   if(req.method==='POST'&&url.pathname==='/api/me/resend-verification'){
     if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'send email'))return;
     if(user.emailVerifiedAt)return json(res,409,{error:{code:'EMAIL_ALREADY_VERIFIED',message:'This address is already confirmed.'}});
     if(!rateLimit(`verify:${user.id}`,5,3600000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many verification emails. Try again later.'}});
     return json(res,202,{emailVerification:await issueEmailVerification(user)});
@@ -816,7 +1101,8 @@ async function api(req,res,url){
     return textResponse(res,200,await calendarDocument(user,feedOrigin(req)),'text/calendar; charset=utf-8');
   }
   if(req.method==='DELETE'&&url.pathname==='/api/me/account'){
-    if(!mutationAllowed(req,res,session))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));const purged={setLogs:0,workoutLogs:0,progressEntries:0,nutritionEntries:0,nutritionTargets:0,trainerNotes:0,messages:0,messageAttachments:0,notifications:0,tokens:0};
+    if(!mutationAllowed(req,res,session))return;
+    if(demoBlocked(res,user,'be deleted'))return;const body=await readJson(req,res);if(!body)return;if(body.confirmation!=='DELETE PTRAINER ACCOUNT')return json(res,422,{error:{code:'DELETION_CONFIRMATION_INVALID',message:'Enter the exact account deletion confirmation.'}});const correct=await verifyPassword(String(body.password||''),user.passwordHash);if(!correct)return json(res,401,{error:{code:'CREDENTIALS_INVALID',message:'Password is incorrect.'}});const anonymousEmail=`deleted+${tokenDigest(user.id).slice(0,20).toLowerCase()}@ptrainer.invalid`,randomPassword=await hashPassword(randomBytes(32).toString('base64url'));const purged={setLogs:0,workoutLogs:0,progressEntries:0,nutritionEntries:0,nutritionTargets:0,trainerNotes:0,messages:0,messageAttachments:0,notifications:0,tokens:0};
     await transaction(async tx=>{
       // Anonymising the identity row left every measurement, meal note, set and
       // message body behind, which is the gap the privacy checklist calls out.
@@ -1031,7 +1317,7 @@ async function api(req,res,url){
   }
   if(req.method==='POST'&&url.pathname==='/api/invitations'){
     if(!mutationAllowed(req,res,session)||!requireRole(res,user,'TRAINER'))return;if(!rateLimit(`invite:${user.id}`,10,3600000))return json(res,429,{error:{code:'RATE_LIMITED',message:'Too many invitations. Try again later.'}});const body=await readJson(req,res);if(!body)return;const email=cleanEmail(body.email),note=typeof body.note==='string'?body.note.trim():'';
-    if(!validEmail(email))return json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});if(note.length>500)return json(res,422,{error:{code:'NOTE_TOO_LONG',message:'Note must be 500 characters or fewer.'}});// Only a still-acceptable invitation blocks a new one. Without the expiry
+    if(!validEmail(email))return json(res,422,{error:{code:'EMAIL_INVALID',message:'Enter a valid email address.'}});if(demoRecipientBlocked(res,user,email))return;if(note.length>500)return json(res,422,{error:{code:'NOTE_TOO_LONG',message:'Note must be 500 characters or fewer.'}});// Only a still-acceptable invitation blocks a new one. Without the expiry
     // check a lapsed invite locked that address out of this trainer for good.
     await query("UPDATE invitations SET status='EXPIRED' WHERE trainer_id=$1 AND email=$2 AND status='PENDING' AND expires_at < now()",[user.id,email]);
     const pendingInvite=await query("SELECT 1 FROM invitations WHERE trainer_id=$1 AND email=$2 AND status='PENDING' AND expires_at > now()",[user.id,email]);if([...invitations.values()].some(i=>i.email===email&&i.trainerId===user.id&&i.status==='PENDING'&&i.expiresAt>Date.now())||pendingInvite.rowCount)return json(res,409,{error:{code:'INVITE_EXISTS',message:'A pending invitation already exists.'}});
@@ -1373,7 +1659,14 @@ async function api(req,res,url){
 }
 
 async function serveStatic(req,res,url){const safe=publicFile(url.pathname);if(!safe)return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});const path=join(ROOT,safe);if(!path.startsWith(ROOT))return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl,frameable:safe==='index.html'});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}})}}
-const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}const url=new URL(req.url,APP_ORIGIN);if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
+const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}let url;try{url=new URL(req.url,APP_ORIGIN)}catch{
+    // A protocol-relative target - "//", "//evil.example" - is not a path this
+    // server can resolve against its origin, and new URL() throws on it. That
+    // reached the catch-all below as a 500 with a stack trace behind it, on an
+    // unauthenticated route anybody can call. It is a malformed request, so it
+    // is answered as one.
+    return json(res,400,{error:{code:'BAD_REQUEST',message:'Malformed request path.'}});
+  }if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
 server.listen(PORT,HOST,()=>{
   log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode(),errorReporting:errorReportingEnabled()?'enabled':'stdout only',email:emailTransport()});
   // Production refuses to start with mail misconfigured. Elsewhere it is only a
@@ -1389,7 +1682,7 @@ server.listen(PORT,HOST,()=>{
 const stopRetentionSweeps=startRetentionSweeps(query,log);
 // The bounded caches evict on access and when they hit their cap. This keeps a
 // quiet process from holding entries nobody will ask for again.
-const boundedCaches=[sessions,workoutSaves,rateBuckets,passwordResets,foodProductCache,foodSearchCache];
+const boundedCaches=[sessions,workoutSaves,rateBuckets,passwordResets,foodProductCache,foodSearchCache,pendingTwoFactor,botProtection.pending];
 const cachePruneTimer=setInterval(()=>{for(const cache of boundedCaches)cache.prune()},15*60*1000);
 cachePruneTimer.unref();
 let shuttingDown=false;async function shutdown(signal){if(shuttingDown)return;shuttingDown=true;log('info','server_shutdown_started',{signal});stopRetentionSweeps();clearInterval(cachePruneTimer);server.close(async()=>{await closeDatabase();log('info','server_shutdown_complete');process.exit(0)});setTimeout(()=>process.exit(1),10000).unref()}

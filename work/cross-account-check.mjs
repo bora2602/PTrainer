@@ -1,5 +1,6 @@
 // Two unrelated accounts, each trying to reach the other's records by ID.
 // Guessing an identifier must not be enough to read or change anything.
+import { challengeFields } from './bot-challenge.mjs';
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
 const notice = (await (await fetch(`${base}/api/privacy`)).json()).noticeVersion;
@@ -9,10 +10,15 @@ async function signUp(role) {
   let cookie = (start.headers.get('set-cookie') || '').split(';')[0];
   let { csrfToken } = await start.json();
   const email = `probe_${role}_${stamp}_${Math.random().toString(36).slice(2, 8)}@ptrainer.local`;
+  // Registration carries a bot-protection challenge; this check speaks raw fetch
+  // rather than going through an Actor, so it asks for one the same way.
+  const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { cookie, 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' }, body })
+    .then(async result => ({ data: await result.json().catch(() => ({})), status: result.status, result }));
+  const proof = await challengeFields(path => post(path, JSON.stringify({ purpose: 'register' })));
   const response = await fetch(`${base}/api/auth/register`, {
     method: 'POST',
     headers: { cookie, 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `Probe ${role}`, email, password: 'ProbeAccount1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+    body: JSON.stringify({ name: `Probe ${role}`, email, password: 'ProbeAccount1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...proof })
   });
   if (response.status === 429) {
     console.error('This check needs to register two accounts, and the registration rate');

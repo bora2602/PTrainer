@@ -6,6 +6,7 @@
 // another practice, an unconnected trainee and a signed-out caller must all get
 // the same answer as an id that never existed.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -37,7 +38,7 @@ class Actor {
     const email = `msg_${label}_${stamp}@ptrainer.local`;
     const result = await this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: `Messaging ${label}`, email, password: 'MessagingPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+      body: JSON.stringify({ name: `Messaging ${label}`, email, password: 'MessagingPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...(await challengeFields(this.request.bind(this))) })
     });
     if (result.status === 429) { console.error('Registration rate limit spent; restart the app and rerun.'); process.exit(2); }
     assert.equal(result.status, 201);

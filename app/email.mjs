@@ -74,3 +74,20 @@ export const invitationEmail = (trainerName, link, note) => ({
   subject: `${trainerName} invited you to Ptrainer`,
   text: `${trainerName} would like to coach you on Ptrainer.\n${note ? `\nTheir note: ${note}\n` : ''}\nAccept the invitation here:\n\n${link}\n\nThe invitation expires in 7 days.\n`
 });
+
+// Sent when somebody tries to register an address that already has an account.
+// This message is the reason /api/auth/register can answer the same way whether
+// or not the address is taken: the person who owns it still learns what
+// happened, while the person guessing at the form learns nothing.
+export const accountExistsEmail = (name, signInLink) => ({
+  subject: 'Someone tried to create a Ptrainer account with your email',
+  text: `Hi ${name},\n\nSomebody just tried to sign up for Ptrainer using this address, which already has an account. No new account was created and nothing has changed.\n\nIf that was you, sign in instead:\n\n${signInLink}\n\nIf you have forgotten your password, use "Forgot password?" on that page. If it was not you, no action is needed - whoever it was could not see whether this address is registered.\n`
+});
+
+// Sent when two-factor authentication is turned on or off. A change to how an
+// account is protected is exactly the thing its owner should hear about out of
+// band, because an attacker who has the password would otherwise enrol silently.
+export const twoFactorChangedEmail = (name, enabled) => ({
+  subject: enabled ? 'Two-factor authentication is on for your Ptrainer account' : 'Two-factor authentication was turned off',
+  text: `Hi ${name},\n\n${enabled ? 'Two-factor authentication is now switched on. Signing in will ask for a code from your authenticator app as well as your password.\n\nKeep your recovery codes somewhere safe - they are the way back in if you lose the phone.' : 'Two-factor authentication has been switched off. Signing in now needs only your password.'}\n\nIf you did not make this change, reset your password immediately.\n`
+});

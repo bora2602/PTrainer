@@ -1,14 +1,14 @@
-Add calendar entegration - export to google / apple calendar (done - subscribe link + .ics download in Settings; OAuth sync still out)
+(Done) Add calendar entegration - export to google / apple calendar (done - subscribe link + .ics download in Settings; OAuth sync still out)
 Better backend protection
-Login experience optimization
+(Done) Login experience optimization
 better sets / reps tracking
-personal trainer and trainee message platform enhancement 
+(Done) personal trainer and trainee message platform enhancement 
 Web page look optimization
-Login page description or text change -----> it should say something like The best platform for personal trainers and their clients
-Client/user message interface change for example add files, pictures and emojis 
+(Done) Login page description or text change -----> it should say something like The best platform for personal trainers and their clients
+(Done) Client/user message interface change for example add files, pictures and emojis 
 Mobile look improvement
-add pictures to chat
-We need to have FAQ part and submit an email section (done)
+(Done)add pictures to chat
+(Done) We need to have FAQ part and submit an email section (done)
 
 
 

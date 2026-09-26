@@ -2,6 +2,7 @@
 // library, coaching notes, progress correction and unit conversion, template
 // lifecycle, and scheduled or bulk assignment.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -30,7 +31,7 @@ class Actor {
     const email = `p2_${label}_${stamp}@ptrainer.local`;
     const result = await this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: `Phase Two ${label}`, email, password: 'PhaseTwoPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+      body: JSON.stringify({ name: `Phase Two ${label}`, email, password: 'PhaseTwoPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...(await challengeFields(this.request.bind(this))) })
     });
     if (result.status === 429) { console.error('Registration rate limit spent; restart the app and rerun.'); process.exit(2); }
     assert.equal(result.status, 201);

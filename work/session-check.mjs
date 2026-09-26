@@ -3,6 +3,7 @@
 // than one client; a client starts it, logs, and presses Done; the trainer
 // reads back exactly what was lifted and how long it took.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -31,7 +32,7 @@ class Actor {
     const notice = (await this.request('/api/privacy')).data.noticeVersion;
     const result = await this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: `Session ${label}`, email: `session_${label}_${stamp}@ptrainer.local`, password: 'SessionPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+      body: JSON.stringify({ name: `Session ${label}`, email: `session_${label}_${stamp}@ptrainer.local`, password: 'SessionPass1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...(await challengeFields(this.request.bind(this))) })
     });
     if (result.status === 429) { console.error('Registration rate limit spent; restart the app and rerun.'); process.exit(2); }
     assert.equal(result.status, 201);

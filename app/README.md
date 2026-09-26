@@ -32,10 +32,18 @@ To check the layout at phone sizes, open `http://127.0.0.1:4173/preview` (or **P
 
 To confirm account email is really being delivered, run `pnpm run email:test you@example.com`. With the default `EMAIL_TRANSPORT=log`, links are printed to the server log instead of sent; `.env.example` has the four settings that switch it to Resend.
 
-Demo accounts:
+Demo: press **Try trainer demo** or **Try client demo** on the sign-in page — no
+credentials are typed, and none are shipped to the browser. The server picks the
+account; client demos rotate across five sample clients so people exploring at the
+same time do not edit each other's data. Demo accounts cannot email anyone outside
+the demo, change their password, enrol two-factor, or be deleted, and
+`POST /api/demo/reset` (development only) restores the sample data without touching
+real accounts. For scripts and the test suite, the underlying accounts are:
 
 - Trainer: `trainer@ptrainer.local` / `DemoTrainer1!`
-- Trainee: `trainee@ptrainer.local` / `DemoTrainee1!`
+- Client: `trainee@ptrainer.local` / `DemoTrainee1!` (plus `priya@`, `marcus@`, `sofia@`, `ellis@` with the same password)
+
+These exist only outside production; a production start suspends them.
 
 Run the full smoke suite with `pnpm test`. Liveness is available at `/healthz`, database readiness at `/readyz`, and local Prometheus metrics at `/metrics`.
 

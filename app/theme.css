@@ -1903,3 +1903,237 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
   .auth-proof li { grid-template-columns: 12px minmax(0, 1fr); }
   .auth-figures { gap: var(--space-md); }
 }
+
+/* ===========================================================================
+   Sign-in, registration, the second factor, and the demo
+   ---------------------------------------------------------------------------
+   Added with the 2026-09-26 auth work. Everything here resolves to a token, no
+   colour is the only signal, and both drops are defined on bare :root so the
+   theme toggle and the system default agree - see design.md.
+   =========================================================================== */
+
+/* The intro column dropped its bullet list for one supporting line. The lede
+   carries the description; this is the quieter line under it. */
+.auth-support {
+  font-size: var(--text-sm);
+  color: var(--color-faint);
+  letter-spacing: 0.01em;
+  max-width: 46ch;
+  margin: calc(var(--space-xs) * -1) 0 0;
+}
+
+/* Labels no longer wrap their inputs - a "for" attribute is what a screen
+   reader and a password manager both read most reliably, and the reveal button
+   cannot sit inside a label without the label's own click behaviour fighting
+   it. .auth-form is a 14px grid, so a label and the field it names are pulled
+   back to the 7px rhythm the nested markup used to give them. */
+.auth-form label + input,
+.auth-form label + .password-field,
+.auth-form label + .code-input,
+.auth-form label + small,
+.auth-form input + small,
+.auth-form .password-field + small,
+.security-panel label + input,
+.security-panel label + .password-field,
+.security-panel label + .code-input { margin-top: -7px; }
+
+.auth-form > div > h2:focus-visible,
+.auth-form h2:focus { outline: none; }
+
+/* Show/hide password. The button sits inside the field's box rather than beside
+   it, so the input keeps its full width on a phone. */
+.password-field { position: relative; display: grid; }
+.password-field > input { padding-right: 4.25rem; }
+.reveal-button {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2xs);
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reveal-button:hover { background: var(--color-accent-weak); }
+.reveal-button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+/* A 44px target under a coarse pointer, per design.md, without making the
+   control look oversized under a mouse. */
+@media (pointer: coarse) {
+  .reveal-button { min-height: 44px; min-width: 44px; }
+  .password-field > input { padding-right: 4.75rem; }
+}
+
+/* One-time codes: monospaced and spaced out, because they are transcribed
+   digit by digit from a phone. */
+.code-input {
+  font-family: var(--font-label);
+  font-size: var(--text-md) !important;
+  letter-spacing: 0.22em;
+  font-variant-numeric: tabular-nums;
+}
+#twoFactorRecovery, #twoFactorDisableCode, #twoFactorRegenerateCode { letter-spacing: 0.12em; }
+
+/* The demo buttons. Two equal actions, and a note that says what they cost. */
+.demo-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-xs); }
+.demo-note {
+  font-size: var(--text-2xs);
+  color: var(--color-faint);
+  text-align: center;
+  margin: calc(var(--space-2xs) * -1) 0 0;
+  line-height: 1.5;
+}
+@media (max-width: 420px) {
+  .demo-actions { grid-template-columns: 1fr; }
+}
+
+/* The demo banner. A status strip, not a toast: it has to stay for as long as
+   the session does, because its whole job is to keep the visitor from mistaking
+   Maya's invented clients for real ones. */
+.demo-banner {
+  /* .app-shell is a two-column grid (228px rail + content). Without this the
+     banner takes the rail's cell as the first child and pushes the whole app
+     sideways; spanning every column puts it in a row of its own above both. */
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-accent-weak);
+  border-bottom: 1px solid var(--color-accent-line);
+  color: var(--color-ink-2);
+  font-size: var(--text-xs);
+}
+.demo-banner-mark {
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent-line);
+  border-radius: var(--radius-chip);
+  padding: var(--space-3xs) var(--space-xs);
+  white-space: nowrap;
+}
+.demo-banner .text-button { margin-left: auto; white-space: nowrap; }
+
+/* Two-factor authentication in Settings. */
+.security-panel { display: grid; gap: var(--space-sm); }
+.security-panel h2 { font-family: var(--font-display); font-size: var(--text-lg); font-weight: var(--display-weight); }
+.security-panel h3 { font-size: var(--text-sm); font-weight: 600; margin: var(--space-sm) 0 var(--space-2xs); }
+.security-panel p { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.6; }
+.security-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.security-panel form { display: grid; gap: var(--space-xs); justify-items: start; }
+.security-panel form > input, .security-panel form > .password-field { width: 100%; max-width: 22rem; }
+.security-confirm {
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-card);
+  padding: var(--space-md);
+  background: var(--color-paper-2);
+}
+
+/* Status carries a word as well as a colour - "On."/"Off." - because colour is
+   never the only signal. The dot is a second, redundant cue. */
+#twoFactorStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-ink-2);
+}
+#twoFactorStatus::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-rule-2);
+  flex: none;
+}
+#twoFactorStatus[data-state="on"]::before { background: var(--color-positive); }
+#twoFactorStatus[data-state="off"]::before { background: var(--color-caution); }
+
+/* The secret and the recovery codes are transcribed by hand, so both are
+   monospaced and given room to breathe. */
+.secret-key {
+  display: block;
+  font-family: var(--font-label);
+  font-size: var(--text-md);
+  letter-spacing: 0.14em;
+  word-break: break-all;
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-input);
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-ink);
+  user-select: all;
+}
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-2xs) var(--space-md);
+  font-family: var(--font-label);
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  color: var(--color-ink);
+  margin: var(--space-xs) 0;
+  padding-left: var(--space-lg);
+}
+.recovery-codes li { padding: var(--space-3xs) 0; user-select: all; }
+
+/* The live password hint. "ok" is not a colour on its own - the words change
+   from "still needs…" to "that will do", which is the actual signal. */
+#registerPasswordHint[data-state="ok"] { color: var(--color-positive); }
+#registerPasswordHint[data-state="short"] { color: var(--color-muted); }
+
+/* A field the server rejected. The message itself is in the form's
+   role="alert" region; this is the second, visual cue on the field. */
+.auth-form [aria-invalid="true"],
+.security-panel [aria-invalid="true"] {
+  border-color: var(--color-critical) !important;
+  background: var(--color-critical-weak);
+}
+
+/* The auth figure row. It carried a gap and a label colour but never any
+   layout, so it rendered as a default bulleted list - "• 198MOVEMENTS" stacked
+   down the page, with no space between the number and its label. That predates
+   this work; it is fixed here because it sits on the sign-in page.
+   The numbers are real and counted from exercise-catalog.mjs (design.md). */
+.auth-figures {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: var(--space-lg) 0 0;
+  padding: 0;
+}
+.auth-figures li {
+  display: grid;
+  gap: var(--space-3xs);
+  padding-right: var(--space-md);
+  border-right: 1px solid var(--color-rule);
+}
+.auth-figures li:last-child { border-right: 0; padding-right: 0; }
+.auth-figures li span {
+  font-family: var(--font-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+@media (max-width: 560px) {
+  .auth-figures li { border-right: 0; padding-right: var(--space-lg); }
+}
+
+/* The code and recovery fields sit in their own wrappers so one can replace the
+   other; inside a wrapper the label/field spacing comes from the wrapper's gap,
+   not from the negative margin used for bare siblings of .auth-form. */
+#twoFactorCodeField, #twoFactorRecoveryField { display: grid; gap: 7px; }
+#twoFactorCodeField label + input, #twoFactorRecoveryField label + input { margin-top: 0; }
+#twoFactorRecoveryField small { font-size: var(--text-xs); color: var(--color-muted); }

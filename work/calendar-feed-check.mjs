@@ -10,6 +10,7 @@
 //   - it carries a name and a date and nothing else. Sets, reps, loads and the
 //     exercise list must never travel in a file anybody holding the URL can read.
 import assert from 'node:assert/strict';
+import { challengeFields } from './bot-challenge.mjs';
 
 const base = process.env.PTRAINER_BASE || 'http://127.0.0.1:4173';
 const stamp = Date.now();
@@ -38,7 +39,7 @@ class Actor {
     const email = `feed_${role}_${stamp}_${Math.random().toString(36).slice(2, 8)}@ptrainer.local`;
     const result = await this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ name: `Feed ${role}`, email, password: 'ProbeAccount1!', role, privacyAccepted: true, privacyNoticeVersion: notice })
+      body: JSON.stringify({ name: `Feed ${role}`, email, password: 'ProbeAccount1!', role, privacyAccepted: true, privacyNoticeVersion: notice, ...(await challengeFields(this.request.bind(this))) })
     });
     if (result.status === 429) {
       console.error('This check registers one account and the registration rate limit is');
