@@ -1,0 +1,1468 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+ * Hallmark · genre: modern-minimal · macrostructure: Marquee Hero (entry) / Index-First (app views) / Narrative Workflow (session logger)
+ * theme: Coral · drops: Day (default) + Night ([data-theme=dark])
+ * nav: N3 side-rail + mobile tab bar · footer: none (app shell) · enrichment: none
+ * design-system: design.md · designed-as-app
+ *
+ * The Coral signature layer. tokens.css holds the palette; styles.css carries
+ * layout inherited from earlier builds; this file carries the theme's voice and
+ * loads last, so it is where a disagreement with styles.css gets settled.
+ *
+ * What this layer is for, in one line: a page states its purpose, offers one
+ * action, and lists the real things underneath. Not a grid of summaries.
+ *
+ * Three rules it exists to enforce:
+ *   1. Accent is a signal, not a surface. Coral marks the active destination,
+ *      the primary action, focus, and progress. Nothing else.
+ *   2. A card is a hairline on flat paper. No glow, no emit, no tinted panel.
+ *   3. Every number is tabular, every status carries a glyph, every label is a
+ *      word. Colour alone never means anything here.
+ */
+
+/* ═══════════════════════════════════════════════════════════════
+   1 · Foundation
+   ═══════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  overflow-x: clip;                 /* never `hidden` — it breaks position: sticky */
+}
+
+html {
+  font-family: var(--font-body);
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+input,
+textarea,
+select,
+optgroup {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-size: var(--text-base);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Long words in a display heading break rather than push the page sideways. */
+h1, h2, h3,
+.section-heading h1,
+.welcome-row h1 {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* Every number in this product is compared against another number. */
+.set-table,
+table,
+.stat-card strong,
+.session-readout,
+.streak strong,
+.progress-entry-list,
+.nutrition-summary-card strong {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--color-brand-weak);
+  color: var(--color-ink);
+}
+
+/* One focus treatment, everywhere, and it never animates in. */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+  transition: none;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   2 · Type — one grotesk, a quiet mono for machine labels
+
+   The inherited sheet sets display headings at `font-weight: 400`, which on
+   Geist reads as unfinished. Display is 600 here, and the sizes come from the
+   token scale rather than the hardcoded pixel values underneath.
+   ═══════════════════════════════════════════════════════════════ */
+
+h1, h2, h3,
+.section-heading h1,
+.welcome-row h1,
+.workout-header h1,
+.auth-intro h1,
+.panel-header h2,
+.focus-copy h2,
+.modal-card h2,
+.settings-panel h2,
+.privacy-panel h2,
+.empty-state h2,
+.auth-form h2,
+.trainee-hero h2 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-style: normal;               /* no italic display, ever */
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--lh-snug);
+  color: var(--color-ink);
+}
+
+/* A page's own title. One per view. */
+.section-heading h1,
+.welcome-row h1,
+.workout-header h1 {
+  font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+
+/* A panel's title sits a clear step below the page's. */
+.panel-header h2,
+.focus-copy h2,
+.modal-card h2,
+.settings-panel h2,
+.privacy-panel h2 {
+  font-size: var(--text-md);
+  margin: 0;
+}
+
+/* The sentence under a heading. Explains; never repeats the heading. */
+.section-heading > div > p,
+.welcome-row > div > p,
+.panel-header p {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: var(--space-2xs) 0 0;
+  max-width: 62ch;
+}
+
+/* Machine labels. Mono, tracked, uppercase — and now rare. Most of the
+   eyebrows that used to sit above every heading are gone from the markup;
+   what remains is table headers, status chips and set numbers, where an
+   uppercase mono label is doing real work. */
+.meta-label,
+.stat__label,
+.status,
+.exercise-tag,
+.set-number,
+th {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* The eyebrow survives as a class for the two entry-screen uses that earn it,
+   but it is no longer a decorative kicker: sentence case, quiet, and small. */
+.eyebrow,
+.focus-kicker {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--color-faint);
+  margin: 0 0 var(--space-2xs);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3 · Surfaces — a hairline on flat paper
+
+   Aurora put a faint accent emission on every card. On a light ground that
+   reads as a smudge, and it was also how the old build made eight views look
+   like eight dashboards. A card here is a border and nothing else; the one
+   exception is a focal surface, which gets a lift and still no colour.
+   ═══════════════════════════════════════════════════════════════ */
+
+.panel,
+.stat-card,
+.workout-summary,
+.exercise-card,
+.client-profile,
+.pricing-card,
+.invite-accept,
+.nutrition-summary-card,
+.settings-panel,
+.auth-card,
+.focus-card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+  background-image: none;
+}
+
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .workout-summary,
+html[data-theme="dark"] .exercise-card,
+html[data-theme="dark"] .client-profile,
+html[data-theme="dark"] .pricing-card,
+html[data-theme="dark"] .invite-accept,
+html[data-theme="dark"] .nutrition-summary-card,
+html[data-theme="dark"] .settings-panel,
+html[data-theme="dark"] .auth-card,
+html[data-theme="dark"] .focus-card {
+  background: var(--color-paper-2);      /* on dark, raised means lighter */
+}
+
+/* The card the eye should land on first. A lift, not a colour. */
+.auth-card,
+.focus-card,
+.today-card {
+  box-shadow: var(--shadow-card);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .client-profile,
+  .pricing-card,
+  .nutrition-summary-card {
+    transition:
+      transform var(--dur-short) var(--ease-out),
+      border-color var(--dur-short) var(--ease-out);
+  }
+  .client-profile:hover,
+  .pricing-card:hover,
+  .nutrition-summary-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-rule-2);
+  }
+}
+
+/* A counter. Tabular, ink-coloured, and no longer huge — a number that fills
+   the screen is the reflex this redesign removes. */
+.stat-card strong,
+.trainee-stats strong,
+.nutrition-summary-card strong,
+.session-readout,
+.streak strong {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-xl);
+  line-height: 1.1;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4 · Side rail (N3) — desktop navigation
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (min-width: 45.0625rem) {
+  .app-shell {
+    background: linear-gradient(to right,
+      var(--color-rail) 0 228px,
+      var(--color-rule) 228px 229px,
+      var(--color-paper) 229px);
+  }
+}
+
+/* Flat. The wash Aurora put here is gone: a gradient behind a data table makes
+   contrast a function of position, and this theme's calm comes from space. */
+.app-shell main {
+  background: var(--color-paper);
+  background-image: none;
+  min-height: 100dvh;
+}
+
+.sidebar {
+  background: var(--color-rail);
+  border-inline-end: 1px solid var(--color-rule);
+  border-radius: 0;
+  box-shadow: none;
+  background-image: none;
+}
+
+.brand span {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-ink);
+}
+
+.nav-item {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-muted);
+  border-radius: var(--radius-input);
+  white-space: nowrap;              /* a nav label never wraps */
+  position: relative;
+  background: transparent;
+  transition:
+    color var(--dur-micro) var(--ease-out),
+    background-color var(--dur-micro) var(--ease-out);
+}
+/* The icon set. Stroked in currentColor, so an icon follows the ink of the
+   control it sits in and the active state needs no second rule. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--color-faint);
+  transition: color var(--dur-micro) var(--ease-out);
+}
+/* styles.css gives the rail a 25px icon column, and at <=1050px it collapses
+   the rail to icons only. Centre the icon in its cell so it holds the middle in
+   both states - a glyph was centred by text-align, an SVG is not. */
+.nav-item .icon { width: var(--icon-rail); height: var(--icon-rail); justify-self: center; }
+/* The topbar's two icons sit in controls rather than in the nav, so they take
+   their size here and their colour from the button they are in. */
+.icon-button .icon,
+.search .icon { width: var(--icon-tab); height: var(--icon-tab); color: inherit; }
+.icon-button { display: inline-flex; align-items: center; justify-content: center; }
+.nav-item:hover { background: var(--color-paper-3); color: var(--color-ink-2); }
+
+/* Active state carries three signals, not one: a coral bar, a coral icon, and
+   ink-weight text. Colour alone is never the only cue. */
+.nav-item.active {
+  background: var(--color-brand-weak);
+  color: var(--color-ink);
+  font-weight: 600;
+  box-shadow: none;
+}
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block: 18%;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-brand);
+}
+.nav-item.active .icon { color: var(--color-accent); }
+
+.nav-count {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  background: var(--color-paper-4);
+  color: var(--color-muted);
+  border-radius: var(--radius-chip);
+}
+
+.profile-mini { border-top: 1px solid var(--color-rule); }
+.avatar,
+.client-avatar {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  background: var(--color-paper-4);
+  color: var(--color-ink-2);
+  border-radius: var(--radius-input);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   5 · Mobile tab bar — the frequent destinations, in thumb reach
+
+   The old build hid every destination behind a hamburger, so on a phone
+   "go to my workouts" was two taps and a guess. The five destinations a
+   person actually uses daily now sit at the bottom of the screen. The
+   drawer is still there for the rest.
+   ═══════════════════════════════════════════════════════════════ */
+
+.tabbar {
+  display: none;
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: var(--z-tabbar);
+  background: var(--color-paper);
+  border-block-start: 1px solid var(--color-rule);
+  padding-block: var(--space-2xs);
+  padding-block-end: max(var(--space-2xs), env(safe-area-inset-bottom));
+  padding-inline: var(--space-2xs);
+}
+
+.tabbar-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-3xs);
+  margin: 0;
+  max-width: 34rem;
+  margin-inline: auto;
+}
+
+.tab-item {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: var(--space-2xs) var(--space-3xs);
+  border: 0;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--dur-micro) var(--ease-out);
+}
+.tab-item .icon { width: var(--icon-tab); height: var(--icon-tab); }
+.tab-item.active { color: var(--color-ink); font-weight: 600; }
+.tab-item.active .icon { color: var(--color-accent); }
+/* The active tab is marked by a coral rule above it as well as by weight. */
+.tab-item.active::before {
+  content: "";
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline: 22%;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-brand);
+}
+.tab-item:active { transform: translateY(1px); }
+
+/* At 320px each of the five tabs gets about 57px of content box. The longest
+   label, "Nutrition", measures roughly 50px at 11px Geist, so it fits — but a
+   raised system font size would spill it, and a nav label must never wrap.
+   min-width:0 lets the track shrink, the clip is the last resort, and the
+   narrow breakpoint below buys the margin back before either is needed. */
+.tab-item { min-width: 0; }
+.tab-item > span:not(.icon):not(.tab-count) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+@media (max-width: 22.5rem) {
+  .tab-item { font-size: 0.625rem; letter-spacing: -0.01em; }
+  .tab-item .icon { width: 1rem; height: 1rem; }
+}
+
+/* A count on a tab, for unread messages. */
+.tab-item .tab-count {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 50%;
+  margin-inline-start: 6px;
+  min-width: 15px;
+  padding-inline: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-brand);
+  color: var(--color-accent-ink);
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+  text-align: center;
+}
+html[data-theme="dark"] .tab-item .tab-count { color: var(--color-accent-ink); }
+.tab-item .tab-count:empty,
+.tab-item .tab-count[hidden] { display: none; }
+
+/* 720px, not 45rem, and deliberately so: styles.css hides the side rail at
+   `max-width:720px` in pixels. A rem breakpoint here would drift against it
+   under a non-default root font size and open a window where the rail is
+   already hidden and the tab bar has not appeared — a viewport with no
+   navigation at all. The two must be the same unit. */
+@media (max-width: 720px) {
+  .tabbar { display: block; }
+  /* Clear the bar so the last row of any list stays reachable. */
+  .app-shell main { padding-block-end: calc(var(--tabbar-height) + var(--space-lg)); }
+  /* The logger owns the screen; its own footer replaces the tab bar. */
+  body.in-session .tabbar { display: none; }
+
+  /* A chip is the size of its text. When the lede stacks, `align-items:
+     stretch` was pulling it to the full width of the column. */
+  .coach-chip { align-self: flex-start; }
+
+  /* On a phone the bottom edge already belongs to the tab bar, and inside the
+     logger to the session footer and its Finish button. A toast anchored down
+     there lands under the thumb that is logging sets. It goes to the top
+     instead - but below the topbar, not over it, because the menu button it
+     would cover is the only way to reach Settings and Sign out on a phone. */
+  :root { --topbar-height: 4.0625rem; }   /* 65px here, per styles.css */
+  #toast {
+    top: calc(var(--topbar-height) + var(--space-sm) + env(safe-area-inset-top));
+    bottom: auto;
+    left: var(--space-sm);
+    right: var(--space-sm);
+    transform: translateY(-12px);
+  }
+  #toast.show { transform: none; }
+
+  /* styles.css gives the mobile drawer z-index 40, which the tab bar at 300
+     would cover along its bottom edge. The drawer is a higher layer than the
+     bar that opens it, so it goes above. */
+  .sidebar {
+    z-index: calc(var(--z-tabbar) + 1);
+    height: 100dvh;
+    overflow-y: auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6 · Topbar
+   ═══════════════════════════════════════════════════════════════ */
+
+.topbar {
+  background: var(--color-paper);
+  border-bottom: 1px solid var(--color-rule);
+  box-shadow: none;
+  background-image: none;
+}
+.search input { font-family: var(--font-body); font-size: var(--text-sm); }
+.search input::placeholder { color: var(--color-faint); }
+.secure-status { color: var(--color-muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   7 · Controls — eight states, physical press
+
+   Primary is a coral fill. In Day that is the deeper coral with white text
+   (5.1:1); in Night the soft coral with near-black text (7.3:1). Both are
+   measured. Never put near-white text on the soft coral: it is 3.15:1.
+   ═══════════════════════════════════════════════════════════════ */
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.danger-button,
+.date-button,
+.icon-button,
+.text-button {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;              /* shorten the label, never wrap it */
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    color var(--dur-micro) var(--ease-out),
+    transform var(--dur-press) var(--ease-press);
+}
+
+.primary-button,
+.focus-card .primary-button,
+.trainee-hero .primary-button {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.primary-button:hover,
+.trainee-hero .primary-button:hover { background: var(--color-accent-hi); }
+
+/* Press-down. Physical confirmation matters for a tap taken mid-set. */
+.primary-button:active,
+.exercise-check:active,
+.secondary-button:active,
+.ghost-button:active,
+.danger-button:active,
+.icon-button:active {
+  transform: translateY(2px);
+}
+
+.primary-button:disabled,
+.primary-button[aria-disabled="true"] {
+  background: var(--color-paper-4);
+  color: var(--color-faint);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Loading. The label goes transparent and a ring spins in its place, so the
+   button keeps its width and the layout does not jump. */
+.primary-button[data-state="loading"] { color: transparent; position: relative; }
+.primary-button[data-state="loading"]::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--color-accent-ink);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: coral-spin 600ms linear infinite;
+}
+
+.secondary-button,
+.date-button,
+.icon-button {
+  background: transparent;
+  color: var(--color-ink-2);
+  border: 1px solid var(--color-rule-2);
+}
+.secondary-button:hover,
+.date-button:hover,
+.icon-button:hover {
+  border-color: var(--color-accent-line);
+  color: var(--color-ink);
+  background: var(--color-paper-2);
+}
+.secondary-button:disabled {
+  color: var(--color-faint);
+  border-color: var(--color-rule);
+  cursor: not-allowed;
+}
+
+.ghost-button,
+.text-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-accent);
+}
+.ghost-button:hover,
+.text-button:hover {
+  color: var(--color-accent-hi);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.danger-button {
+  background: transparent;
+  color: var(--color-critical);
+  border: 1px solid var(--color-critical);
+  border-radius: var(--radius-pill);
+}
+.danger-button:hover { background: var(--color-critical-weak); }
+
+/* The set-complete checkbox. Big enough to hit without looking. */
+.exercise-check {
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-chip);
+  background: var(--color-paper);
+  color: transparent;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    transform var(--dur-press) var(--ease-press);
+}
+.exercise-card.completed .exercise-check {
+  background: var(--color-positive);
+  border-color: var(--color-positive);
+  color: var(--color-paper);
+}
+
+@media (pointer: coarse) {
+  .primary-button,
+  .secondary-button,
+  .danger-button,
+  .ghost-button,
+  .icon-button,
+  .nav-item,
+  .tab-item {
+    min-height: 44px;
+  }
+  .exercise-check { min-width: 32px; min-height: 32px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   8 · Forms — a label, a control, and an error that says what to do
+   ═══════════════════════════════════════════════════════════════ */
+
+input,
+textarea,
+select {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  font-size: var(--text-base);
+  transition: border-color var(--dur-micro) var(--ease-out);
+}
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select { background: var(--color-paper-2); }
+
+input:focus,
+textarea:focus,
+select:focus { border-color: var(--color-accent-line); }
+input::placeholder,
+textarea::placeholder { color: var(--color-faint); }
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background: var(--color-paper-3);
+  color: var(--color-faint);
+  cursor: not-allowed;
+}
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] { border-color: var(--color-critical); }
+
+label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-ink-2);
+}
+
+/* An error is a glyph and a sentence. The brand is also red, so an error may
+   never rely on being red to be read as one. */
+.form-error {
+  font-size: var(--text-sm);
+  color: var(--color-critical);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2xs);
+  margin: 0;
+  line-height: 1.45;
+}
+.form-error::before {
+  content: "⚠";
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  flex: none;
+}
+.form-error:empty { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   9 · Tables, status and progress
+   ═══════════════════════════════════════════════════════════════ */
+
+table { font-variant-numeric: tabular-nums; }
+th {
+  text-align: start;
+  border-bottom: 1px solid var(--color-rule);
+  color: var(--color-faint);
+  font-weight: 500;
+}
+td {
+  border-bottom: 1px solid var(--color-rule);
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+}
+tr:last-child td { border-bottom: 0; }
+
+/* A status is a word in a chip. Each variant also carries a glyph in the
+   markup, so the meaning survives without the colour. */
+.status,
+.exercise-tag,
+.set-number {
+  border-radius: var(--radius-chip);
+}
+.status.upcoming { color: var(--color-muted);    background: var(--color-paper-3); }
+.status.warning,
+.status.attention { color: var(--color-caution);  background: var(--color-caution-weak); }
+.status.active   { color: var(--color-accent);   background: var(--color-accent-weak); }
+.status.done     { color: var(--color-positive); background: var(--color-positive-weak); }
+.up              { color: var(--color-positive); }
+
+.progress-track  { background: var(--color-paper-4); border-radius: var(--radius-pill); }
+.progress-track span,
+.mini-progress i { background: var(--color-brand); border-radius: var(--radius-pill); }
+
+/* The hand-rolled bar chart. Coral bars on flat paper, no gridlines. */
+.line-chart {
+  background: var(--color-paper);
+  border-radius: var(--radius-card);
+}
+.line-chart i,
+.line-chart span > i { background: var(--color-brand); }
+
+/* ═══════════════════════════════════════════════════════════════
+   10 · The lede — what this page is for, and the one thing to do
+
+   Index-First's opening: a title, one sentence, one action. No eyebrow, no
+   stat row, no decoration. Every app view starts the same way, which is what
+   makes moving between them feel like one product.
+   ═══════════════════════════════════════════════════════════════ */
+
+.section-heading,
+.welcome-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule);
+}
+.section-heading > div,
+.welcome-row > div { min-width: 0; }
+.panel-header { flex-wrap: wrap; gap: var(--space-sm); }
+
+/* A page's content sits on a reading measure. Past this a list row becomes a
+   scan across empty space, which is most of what made the old wide layout
+   feel like a dashboard. */
+.page {
+  max-width: var(--page-measure);
+  margin-inline: auto;
+  width: 100%;
+}
+/* The two views that genuinely need the full width: a month grid and a
+   conversation both break if you squeeze them. */
+#calendar-view,
+#messages-view { max-width: 76rem; }
+
+/* ═══════════════════════════════════════════════════════════════
+   11 · Today — the trainee's one next action
+
+   The point of the redesign. A client opens the app and the first thing on
+   screen is the workout they are meant to do and a button that starts it.
+   ═══════════════════════════════════════════════════════════════ */
+
+.today-card {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  background-image: none;
+  margin-bottom: var(--space-lg);
+}
+html[data-theme="dark"] .today-card { background: var(--color-paper-2); }
+
+/* How this card says "this is the thing": a hairline like every other card, a
+   lift from --shadow-card, and a small coral mark beside the timing label. Not
+   a coloured stripe down one edge — an asymmetric thick border on a card is a
+   2018-SaaS tell, and the mark does the same job in less ink. */
+.today-when::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--color-brand);
+  flex: none;
+}
+.today-card.is-empty .today-when::before { background: var(--color-rule-2); }
+.today-card.is-overdue .today-when::before { background: var(--color-caution); }
+
+.today-when {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0;
+}
+.today-card.is-rest .today-when,
+.today-card.is-empty .today-when { color: var(--color-muted); }
+.today-card.is-overdue .today-when { color: var(--color-caution); }
+
+.today-card h2 {
+  font-size: var(--text-xl);
+  letter-spacing: var(--tracking-display);
+  margin: var(--space-2xs) 0 0;
+}
+.today-meta {
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+  margin: var(--space-2xs) 0 0;
+}
+.today-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+.today-actions .primary-button { padding-inline: var(--space-lg); }
+
+/* No workout today is information, not a failure: the mark greys out, the
+   wording changes, and the card keeps its shape. */
+
+/* ═══════════════════════════════════════════════════════════════
+   12 · Figure row — numbers without a dashboard
+
+   Replaces the grid of one-number cards. Four cards, each with an icon tile
+   and a lone integer, is the densest and least useful way to show four
+   numbers; a single hairlined strip says the same thing in a quarter of the
+   space and stops competing with the page's actual content.
+   ═══════════════════════════════════════════════════════════════ */
+
+.stat-grid,
+.trainee-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  margin-bottom: var(--space-lg);
+  overflow: hidden;
+}
+html[data-theme="dark"] .stat-grid,
+html[data-theme="dark"] .trainee-stats { background: var(--color-paper-2); }
+
+.stat-grid .stat-card,
+.trainee-stats .stat-card {
+  flex: 1 1 8rem;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3xs);
+  align-content: start;
+  padding: var(--space-md) var(--space-md);
+  border: 0;
+  border-inline-start: 1px solid var(--color-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.stat-grid .stat-card:first-child,
+.trainee-stats .stat-card:first-child { border-inline-start: 0; }
+
+/* The icon tile is gone. A number needs a label, not a decorated square. */
+.stat-icon { display: none; }
+
+.stat-grid .stat-card > div,
+.trainee-stats .stat-card > div { display: grid; gap: var(--space-3xs); min-width: 0; }
+
+.stat-card span,
+.trainee-stats .stat-card span {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--color-muted);
+}
+.stat-card strong,
+.trainee-stats .stat-card strong { font-size: var(--text-lg); }
+.stat-card small {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  letter-spacing: 0;
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stat-grid .stat-card:hover,
+  .trainee-stats .stat-card:hover { transform: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   13 · Index-First rows — the list is the page
+
+   A workout, a client, a note and a journal entry are all the same shape: a
+   row you can read in one pass and open with one tap. Rows are separated by a
+   hairline inside one container, rather than floating as separate cards.
+   ═══════════════════════════════════════════════════════════════ */
+
+.session-list,
+.note-list,
+.template-list,
+.client-grid,
+.audit-list {
+  display: grid;
+  gap: 0;
+}
+
+.session-list > .session-row,
+.note-list > *,
+.template-list > .template-item {
+  border-radius: 0;
+  border-inline: 0;
+  border-block-start: 0;
+  border-block-end: 1px solid var(--color-rule);
+}
+.session-list > .session-row:last-child,
+.note-list > *:last-child,
+.template-list > .template-item:last-child { border-block-end: 0; }
+
+.session-group {
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  margin-bottom: var(--space-lg);
+  overflow: hidden;
+}
+html[data-theme="dark"] .session-group { background: var(--color-paper-2); }
+
+/* A group's own heading sits inside it, so the page has one title, not seven. */
+.session-group > h2 {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper-2);
+}
+html[data-theme="dark"] .session-group > h2 { background: var(--color-paper-3); }
+
+/* Finished work is history, not the reason a client opened the app. It keeps
+   its place in the list and starts closed, using <details> so the disclosure is
+   the browser's own — keyboard, screen reader and find-in-page all included,
+   and no JavaScript to go wrong. */
+.session-group.is-collapsible > summary {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-paper-2);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 44px;
+}
+html[data-theme="dark"] .session-group.is-collapsible > summary { background: var(--color-paper-3); }
+.session-group.is-collapsible > summary::-webkit-details-marker { display: none; }
+/* The marker is drawn rather than inherited so it can rotate and so it sits on
+   the same baseline as the label in every browser. */
+.session-group.is-collapsible > summary::before {
+  content: "\203a";
+  font-size: var(--text-md);
+  line-height: 1;
+  color: var(--color-faint);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+.session-group.is-collapsible[open] > summary {
+  border-bottom: 1px solid var(--color-rule);
+}
+.session-group.is-collapsible[open] > summary::before { transform: rotate(90deg); }
+.session-group.is-collapsible > summary:hover { color: var(--color-ink-2); }
+
+.session-row {
+  background: transparent;
+  box-shadow: none;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+.session-row:hover { background: var(--color-paper-2); }
+html[data-theme="dark"] .session-row:hover { background: var(--color-paper-3); }
+
+/* Done and overdue are marked by a word in the row, not by tinting it. */
+.session-row.is-done .session-date small { color: var(--color-positive); }
+.session-row.is-overdue .session-date small { color: var(--color-caution); }
+
+.session-date strong {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--color-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.session-date small { font-family: var(--font-label); font-size: var(--text-2xs); letter-spacing: 0.06em; }
+.session-text strong { font-size: var(--text-base); font-weight: 600; color: var(--color-ink); }
+.session-text small { font-size: var(--text-sm); color: var(--color-muted); }
+.session-chevron { color: var(--color-faint); }
+
+.template-item:hover { background: var(--color-paper-2); }
+html[data-theme="dark"] .template-item:hover { background: var(--color-paper-3); }
+
+.empty-state {
+  border: 0;
+  background: transparent;
+  padding: var(--space-xl) var(--space-md);
+  text-align: center;
+  box-shadow: none;
+}
+.empty-state h2 { font-size: var(--text-md); }
+.empty-state p { font-size: var(--text-sm); color: var(--color-muted); max-width: 44ch; margin-inline: auto; }
+
+/* ═══════════════════════════════════════════════════════════════
+   14 · Session logger — Narrative Workflow
+
+   The one genuine sequence in the product: exercise 1, then 2, then 3. It is
+   also the only screen used one-handed, mid-set, out of breath. It gets the
+   whole viewport, large targets, and a footer that never moves.
+   ═══════════════════════════════════════════════════════════════ */
+
+.session-bar {
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-paper);
+}
+.session-title h1 { font-size: var(--text-xl); }
+.session-title p { font-size: var(--text-sm); color: var(--color-muted); }
+
+.exercise-card {
+  margin-bottom: var(--space-sm);
+}
+.exercise-card.completed { border-color: var(--color-positive-weak); }
+
+.set-row input {
+  font-size: var(--text-md);            /* thumbable, and legible at arm's length */
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.set-number {
+  font-family: var(--font-label);
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-footer {
+  position: sticky;
+  inset-block-end: 0;
+  background: var(--color-paper);
+  border-block-start: 1px solid var(--color-rule);
+  padding-block-end: max(var(--space-sm), env(safe-area-inset-bottom));
+  z-index: var(--z-sticky);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   15 · Entry screen — Marquee Hero, no canvas
+
+   Aurora put two radial blooms behind this screen. They are gone: a soft
+   coral cloud behind a sign-in form is the single most recognisable
+   generated-page background there is, and the type does not need help.
+   ═══════════════════════════════════════════════════════════════ */
+
+.auth-screen {
+  background: var(--color-paper);
+  background-image: none;
+  color: var(--color-ink);
+}
+.auth-brand span {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--tracking-tight);
+  font-size: var(--text-lg);
+}
+.auth-intro { text-align: start; }
+.auth-intro h1 {
+  font-size: var(--text-display-s);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-tight);
+  max-width: 24ch;
+}
+/* The accented word in the headline is carried by colour and weight, never by
+   italics. */
+.auth-intro h1 em {
+  font-style: normal;
+  color: var(--color-accent);
+}
+.auth-lede,
+.auth-intro > p:not(.eyebrow) {
+  font-size: var(--text-md);
+  color: var(--color-ink-2);
+  line-height: 1.6;
+  max-width: 52ch;
+}
+
+.auth-proof li,
+.auth-proof span { color: var(--color-ink-2); font-size: var(--text-sm); }
+.auth-figures b {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.auth-figures li span { font-size: var(--text-xs); color: var(--color-muted); }
+
+.auth-card { padding: var(--space-2xs); }
+.auth-tabs { background: var(--color-paper-3); }
+.auth-tabs button {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.auth-tabs button.active {
+  color: var(--color-ink);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-whisper);
+}
+html[data-theme="dark"] .auth-tabs button.active { background: var(--color-paper-3); }
+.auth-form label { font-size: var(--text-sm); font-weight: 500; }
+.auth-form label > small { font-size: var(--text-xs); color: var(--color-muted); font-weight: 400; }
+.auth-form input { font-size: var(--text-base); }
+.demo-divider span { font-size: var(--text-xs); color: var(--color-faint); }
+.auth-legal { color: var(--color-muted); font-size: var(--text-xs); }
+.auth-legal button { color: var(--color-accent); font-size: var(--text-xs); font-weight: 500; }
+
+.role-option { border-color: var(--color-rule-2); }
+.role-option b { font-size: var(--text-sm); }
+.role-option small { font-size: var(--text-xs) !important; color: var(--color-muted); }
+
+.faq-question { font-size: var(--text-base); font-weight: 600; }
+.faq-answer p { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.6; }
+
+/* ═══════════════════════════════════════════════════════════════
+   16 · Modals
+   ═══════════════════════════════════════════════════════════════ */
+
+.modal-card,
+dialog {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--color-ink);
+}
+html[data-theme="dark"] .modal-card,
+html[data-theme="dark"] dialog { background: var(--color-paper-2); }
+dialog::backdrop { background: var(--scrim); }
+.modal-icon {
+  background: var(--color-brand-weak);
+  color: var(--color-accent);
+  border-radius: var(--radius-card);
+}
+.legal-modal > div { font-size: var(--text-sm); color: var(--color-ink-2); line-height: 1.65; }
+
+/* ═══════════════════════════════════════════════════════════════
+   17 · Corrections to inherited layout
+
+   styles.css was written for a denser, darker build. These rules undo the
+   parts of it that fight the redesign, rather than editing 3,000 dense
+   selectors in place.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* The focus card carried a 240px decorative ring. Nothing orbits here. */
+.focus-card::after { content: none; }
+
+.focus-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+.focus-copy { min-width: 0; flex: 1 1 22rem; }
+.focus-copy h2 { font-size: var(--text-lg); }
+.focus-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-md); }
+
+.focus-metric {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2xs);
+  align-content: center;
+  padding-inline-start: var(--space-lg);
+  border-inline-start: 1px solid var(--color-rule);
+}
+.focus-metric .session-readout {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-counter);
+  line-height: 1;
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  margin: 0;
+}
+.focus-metric small {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+  margin: 0;
+}
+
+/* The trainee hero's gradient panel and 120px ring are replaced by .today-card.
+   These rules keep the old markup sane if it is ever rendered. */
+.trainee-hero {
+  background: var(--color-paper);
+  background-image: none;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+}
+.streak {
+  border-color: var(--color-brand-weak);
+  width: 84px;
+  height: 84px;
+  border-width: 6px;
+}
+.streak strong { font-size: var(--text-lg); color: var(--color-ink); }
+.streak span { font-size: var(--text-xs); color: var(--color-muted); }
+
+.coach-chip {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  background: var(--color-paper-2);
+  color: var(--color-muted);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+html[data-theme="dark"] .coach-chip { background: var(--color-paper-3); }
+
+.coach-message span { color: var(--color-accent); font-size: var(--text-xs); letter-spacing: 0.04em; }
+.coach-message p { font-size: var(--text-sm); color: var(--color-ink-2); }
+
+/* The colour-coded stripe beside each scheduled row said nothing — the colours
+   were assigned in rotation, not by meaning. */
+.color-line,
+.color-line.purple,
+.color-line.green-line,
+.color-line.orange-line,
+.color-line.blue-line { background: var(--color-rule-2); }
+
+.attention-icon {
+  border-radius: var(--radius-chip);
+  background: var(--color-paper-3);
+  color: var(--color-ink-2);
+}
+.attention-icon.warning { background: var(--color-caution-weak); color: var(--color-caution); }
+.attention-icon.progress { background: var(--color-positive-weak); color: var(--color-positive); }
+.attention-icon.note { background: var(--color-accent-weak); color: var(--color-accent); }
+
+/* The inherited sheet drops several labels to 8–10px, which is below a
+   comfortable reading size on any screen. Floor them. */
+.audit-item strong { font-size: var(--text-sm); }
+.audit-item span,
+.template-item span,
+.client-picker span { font-size: var(--text-xs); }
+.audit-item {
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule);
+  border-radius: 0;
+  padding-inline: 0;
+}
+.audit-item:last-child { border-bottom: 0; }
+
+.privacy-panel p { font-size: var(--text-sm); }
+.privacy-warning {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+  border-inline-start: 3px solid var(--color-caution);
+  padding-inline-start: var(--space-sm);
+  background: transparent;
+}
+
+.theme-switch { border-color: var(--color-rule-2); border-radius: var(--radius-card); }
+.theme-switch-track { background: var(--color-paper-4); }
+.theme-switch[aria-checked="true"] .theme-switch-track { background: var(--color-brand); }
+
+.pricing-card.featured { border-color: var(--color-brand-line); }
+.pricing-card h2 { font-size: var(--text-2xl); font-variant-numeric: tabular-nums; }
+
+/* The toast. styles.css declares `transition: .25s` with no property list,
+   which means "transition everything" - the named anti-pattern, and it also
+   animates layout properties whenever the theme changes under it. It is also
+   outlined in accent, which spreads the signal colour onto a surface that is
+   usually reporting a failure. Both corrected here, and it stacks above the
+   tab bar rather than behind it. */
+#toast {
+  border: 1px solid var(--color-rule-2);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--text-sm);
+  z-index: var(--z-toast);
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+html[data-theme="dark"] #toast { background: var(--color-paper-3); }
+
+/* ═══════════════════════════════════════════════════════════════
+   18 · Motion — one entrance, nothing loops, nothing decorative
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes coral-spin { to { transform: rotate(360deg); } }
+@keyframes coral-reveal { to { opacity: 1; transform: none; } }
+
+.page.active-view > * {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: coral-reveal var(--dur-long) var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+.page.active-view > *:nth-child(1) { --i: 0; }
+.page.active-view > *:nth-child(2) { --i: 1; }
+.page.active-view > *:nth-child(3) { --i: 2; }
+.page.active-view > *:nth-child(n+4) { --i: 3; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+    scroll-behavior: auto !important;
+  }
+  .page.active-view > * { opacity: 1; transform: none; animation: none; }
+  .primary-button:active,
+  .secondary-button:active,
+  .tab-item:active,
+  .exercise-check:active { transform: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   19 · Responsive guards — verified at 320 / 375 / 414 / 768
+   ═══════════════════════════════════════════════════════════════ */
+
+/* minmax(0, …) not bare 1fr: a bare track will not shrink below its content
+   and pushes the page sideways. */
+.client-grid,
+.dashboard-grid,
+.settings-grid,
+.nutrition-summary,
+.pricing-grid,
+.analytics-grid,
+.nutrition-layout,
+.client-page-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+}
+
+.dashboard-grid,
+.client-page-grid { gap: var(--space-lg); }
+
+@media (max-width: 53.125rem) {
+  .auth-intro,
+  .auth-brand { text-align: start; justify-content: flex-start; }
+  .auth-intro h1,
+  .auth-intro > p { margin-inline: 0; }
+  .auth-proof { justify-content: flex-start; }
+}
+
+@media (max-width: 48rem) {
+  .auth-intro h1 { max-width: none; }
+
+  /* A heading and its action stack rather than crowd each other. */
+  .section-heading,
+  .panel-header,
+  .welcome-row { flex-direction: column; align-items: stretch; }
+
+  .focus-card { flex-direction: column; align-items: stretch; }
+  .focus-metric {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    padding-block-start: var(--space-md);
+    border-block-start: 1px solid var(--color-rule);
+  }
+
+  /* A fixed background on iOS repaints on every scroll frame */
+  .auth-screen { background-attachment: scroll; }
+}
+
+@media (max-width: 30rem) {
+  /* Two numbers per row beats four cramped columns. */
+  .stat-grid .stat-card,
+  .trainee-stats .stat-card { flex: 1 1 45%; }
+  .stat-grid .stat-card:nth-child(odd),
+  .trainee-stats .stat-card:nth-child(odd) { border-inline-start: 0; }
+  .stat-grid .stat-card:nth-child(n+3),
+  .trainee-stats .stat-card:nth-child(n+3) { border-block-start: 1px solid var(--color-rule); }
+
+  .today-card { padding: var(--space-md); }
+  .today-actions { display: grid; }
+  .today-actions > * { width: 100%; }
+}
+
+@media (max-width: 26.5rem) {
+  .auth-proof li { grid-template-columns: 12px minmax(0, 1fr); }
+  .auth-figures { gap: var(--space-md); }
+}

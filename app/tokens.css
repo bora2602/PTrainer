@@ -1,131 +1,137 @@
-/* Hallmark · genre: atmospheric · theme: Aurora · design-system: design.md · designed-as-app
- * "The Linear/Vercel-after-dark register" — cool blue-green gradient on near-black,
- * a single cyan accent with a teal-green chord 25° away, two blooms on the entry canvas.
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+ * Hallmark · genre: modern-minimal · theme: Coral · design-system: design.md · designed-as-app
+ * "Stripe-not-Linear warmth" — near-white paper, one coral signal, Geist throughout.
  *
- * Night (:root, default)         — canonical Aurora, values taken from the upstream theme
- * Day   (html[data-theme=light]) — derived at the same hue so the app keeps its toggle
+ * Day   (:root, default)          — the canonical drop. Light is the everyday theme.
+ * Night (html[data-theme=dark])   — near-black, same coral family, same hierarchy.
  *
- * Axes — paper band: dark 11% / light 97% · display: grotesk-sans 600 · accent hue: cool (H 200)
- * Every colour and font in styles.css and aurora.css must reference a token from this file.
+ * Axes — paper band: light 99% / dark 13% · display: grotesk-sans 600 · accent hue: warm (H 23)
+ * Every colour and font in styles.css and theme.css must reference a token from this file.
+ *
+ * ── The two coral roles, and why there are two ────────────────────────────
+ * The brand colour is oklch(67.8% 0.172 23) — the soft coral that reads as
+ * #EF6464. Measured, it is 3.09:1 on this paper. That is enough for a mark or a
+ * fill (WCAG wants 3:1 for a graphical object) and nowhere near enough for text
+ * (4.5:1), in either direction: white text on it is also 3.15:1.
+ *
+ * So the system splits the colour by job rather than pretending one value does both.
+ *   --color-brand   the soft coral. Marks, fills, progress, the active rail. Never text.
+ *   --color-accent  a deeper coral at the same hue. Text, links, focus. 4.9:1 on paper.
+ * Both are the same hue, so they read as one colour family, not two accents.
+ * Do not "restore" the soft coral onto text. It was measured, and it fails.
  */
 
 /* ─────────────────────────────────────────────────────────────
-   Aurora · Night — the canonical drop
+   Coral · Day — the canonical drop
+   Surfaces recede as they stack: the page is white, a surface set
+   on it is a shade warmer. Cards are held by a hairline, not a shadow.
    ───────────────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark;
-
-  /* Surfaces — a blue-green near-black, never neutral. Raised means lighter. */
-  --color-paper:       oklch(11% 0.025 200);
-  --color-paper-2:     oklch(15% 0.028 200);
-  --color-paper-3:     oklch(18% 0.030 200);
-  --color-paper-4:     oklch(21% 0.030 200);
-  --color-paper-sunk:  oklch(9%  0.024 200);
-  --color-rail:        oklch(13% 0.026 200);
-
-  /* Ink — Aurora's four-step ladder */
-  --color-faint:       oklch(60% 0.018 200);   /* 5.2:1 on paper */
-  --color-muted:       oklch(74% 0.014 200);
-  --color-ink-2:       oklch(82% 0.012 200);
-  --color-ink:         oklch(96% 0.010 200);
-
-  /* Rules */
-  --color-rule:        oklch(28% 0.022 200);
-  --color-rule-2:      oklch(38% 0.024 200);
-
-  /* Accent — one cyan signal */
-  --color-accent:      oklch(72% 0.170 200);
-  --color-accent-hi:   oklch(80% 0.150 200);
-  --color-accent-ink:  oklch(11% 0.025 200);   /* 9.3:1 on the accent fill */
-  --color-accent-weak: oklch(72% 0.170 200 / 0.12);
-  --color-accent-line: oklch(72% 0.170 200 / 0.34);
-
-  /* Teal-green chord — 25° away, so it reads as harmony not a second accent */
-  --color-accent-2:      oklch(64% 0.150 175);
-  --color-accent-2-weak: oklch(64% 0.150 175 / 0.14);
-
-  /* Blooms — entry canvas only, fixed, never animated */
-  --bloom-1: oklch(72% 0.170 200 / 0.16);
-  --bloom-2: oklch(64% 0.150 175 / 0.11);
-
-  /* Aurora's one component signature: a soft accent glow on the focal surface */
-  --glow-focal: 0 0 24px -10px oklch(72% 0.170 200 / 0.35);
-  --card-emit:    oklch(72% 0.170 200 / 0.045);
-  --card-emit-hi: oklch(72% 0.170 200 / 0.10);
-
-  /* Functional status. accent-2 carries "positive" honestly, so only two are added. */
-  --color-positive:      oklch(64% 0.150 175);
-  --color-positive-weak: oklch(64% 0.150 175 / 0.14);
-  --color-caution:       oklch(80% 0.140 75);
-  --color-caution-weak:  oklch(80% 0.140 75 / 0.14);
-  --color-critical:      oklch(70% 0.170 25);
-  --color-critical-weak: oklch(70% 0.170 25 / 0.14);
-
-  --color-focus:       oklch(72% 0.170 200);
-
-  --shadow-whisper:    0 1px 2px oklch(0% 0 0 / 0.32);
-  --shadow-card:       0 18px 44px -26px oklch(0% 0 0 / 0.55);
-  --shadow-modal:      0 40px 100px -30px oklch(0% 0 0 / 0.70);
-  --scrim:             oklch(7% 0.022 200 / 0.76);
-}
-
-/* ─────────────────────────────────────────────────────────────
-   Aurora · Day — derived, hue 200 held
-   Cyan sits at 48% here: at Night's 72% it fails on a light ground.
-   ───────────────────────────────────────────────────────────── */
-html[data-theme="light"] {
   color-scheme: light;
 
-  --color-paper:       oklch(97%   0.010 200);
-  --color-paper-2:     oklch(99.2% 0.005 200);
-  --color-paper-3:     oklch(94.5% 0.012 200);
-  --color-paper-4:     oklch(90.5% 0.014 200);
-  --color-paper-sunk:  oklch(95%   0.012 200);
-  --color-rail:        oklch(94.5% 0.012 200);
+  --color-paper:       oklch(99.4% 0.0025 23);   /* reads white, holds a trace of warmth */
+  --color-paper-2:     oklch(97.8% 0.006  23);
+  --color-paper-3:     oklch(95.8% 0.008  23);
+  --color-paper-4:     oklch(92.5% 0.010  23);
+  --color-paper-sunk:  oklch(97.1% 0.007  23);
+  --color-rail:        oklch(98.8% 0.004  23);
 
-  --color-faint:       oklch(50% 0.014 200);   /* 5.5:1 on paper */
-  --color-muted:       oklch(46% 0.016 200);
-  --color-ink-2:       oklch(30% 0.018 200);
-  --color-ink:         oklch(18% 0.020 200);
+  /* Ink — a four-step ladder, warm-tinted to match the accent */
+  --color-faint:       oklch(54.5% 0.016 23);   /* 4.9:1 on paper */
+  --color-muted:       oklch(47%   0.020 23);   /* 6.8:1 */
+  --color-ink-2:       oklch(34%   0.022 23);   /* 11.1:1 */
+  --color-ink:         oklch(21.5% 0.022 23);   /* 17.3:1 */
 
-  --color-rule:        oklch(88% 0.012 200);
-  --color-rule-2:      oklch(79% 0.014 200);
+  /* Rules — visible, not editorial hairlines. modern-minimal wants them read. */
+  --color-rule:        oklch(90.5% 0.009 23);
+  --color-rule-2:      oklch(84.5% 0.013 23);
 
-  --color-accent:      oklch(48% 0.160 200);   /* 5.0:1 on paper, 5.3:1 reversed */
-  --color-accent-hi:   oklch(40% 0.150 200);
-  --color-accent-ink:  oklch(99% 0.005 200);
-  --color-accent-weak: oklch(48% 0.160 200 / 0.10);
-  --color-accent-line: oklch(48% 0.160 200 / 0.30);
+  /* The coral signal, split by job. See the header note. */
+  --color-brand:       oklch(67.8% 0.172 23);   /* #ef6464 · marks and fills only */
+  --color-brand-weak:  oklch(67.8% 0.172 23 / 0.12);
+  --color-brand-line:  oklch(67.8% 0.172 23 / 0.34);
+  --color-accent:      oklch(56.3% 0.192 23);   /* 4.9:1 on paper · text, links, focus */
+  --color-accent-hi:   oklch(49.2% 0.187 23);   /* the hover step, deeper not lighter */
+  --color-accent-ink:  oklch(100%  0      23);  /* 4.9:1 on the accent fill */
+  --color-accent-weak: oklch(56.3% 0.192 23 / 0.10);
+  --color-accent-line: oklch(56.3% 0.192 23 / 0.28);
 
-  --color-accent-2:      oklch(46% 0.130 175);
-  --color-accent-2-weak: oklch(46% 0.130 175 / 0.12);
+  /* Functional status. Each one always ships with a glyph — see theme.css. */
+  --color-positive:      oklch(50%   0.130 152);  /* 5.5:1 */
+  --color-positive-weak: oklch(50%   0.130 152 / 0.12);
+  --color-caution:       oklch(54%   0.115 70);   /* 5.1:1 */
+  --color-caution-weak:  oklch(54%   0.115 70 / 0.12);
+  /* Critical sits at hue 16 and 48% lightness: dE 0.20 from the brand coral, so
+     an error never reads as the brand. With a red accent this separation is the
+     whole ballgame. */
+  --color-critical:      oklch(48%   0.195 16);   /* 7.1:1 */
+  --color-critical-weak: oklch(48%   0.195 16 / 0.12);
 
-  --bloom-1: oklch(48% 0.160 200 / 0.10);
-  --bloom-2: oklch(46% 0.130 175 / 0.07);
+  --color-focus:       oklch(56.3% 0.192 23);
 
-  --glow-focal: 0 0 24px -12px oklch(48% 0.160 200 / 0.28);
-  --card-emit:    oklch(48% 0.160 200 / 0.035);
-  --card-emit-hi: oklch(48% 0.160 200 / 0.075);
-
-  --color-positive:      oklch(46% 0.130 175);
-  --color-positive-weak: oklch(46% 0.130 175 / 0.12);
-  --color-caution:       oklch(52% 0.130 75);
-  --color-caution-weak:  oklch(52% 0.130 75 / 0.12);
-  --color-critical:      oklch(52% 0.190 25);
-  --color-critical-weak: oklch(52% 0.190 25 / 0.12);
-
-  --color-focus:       oklch(48% 0.160 200);
-
-  --shadow-whisper:    0 1px 2px oklch(30% 0.02 200 / 0.06);
-  --shadow-card:       0 16px 40px -30px oklch(30% 0.03 200 / 0.26);
-  --shadow-modal:      0 40px 96px -34px oklch(30% 0.03 200 / 0.32);
-  --scrim:             oklch(30% 0.02 200 / 0.42);
+  /* Depth is a hairline plus the faintest lift. No glow, no emit. */
+  --shadow-whisper:    0 1px 2px oklch(30% 0.02 23 / 0.05);
+  --shadow-card:       0 1px 3px oklch(30% 0.02 23 / 0.05), 0 8px 24px -18px oklch(30% 0.03 23 / 0.16);
+  --shadow-lift:       0 2px 4px oklch(30% 0.02 23 / 0.06), 0 14px 32px -20px oklch(30% 0.03 23 / 0.20);
+  --shadow-modal:      0 32px 80px -32px oklch(25% 0.03 23 / 0.28);
+  --scrim:             oklch(30% 0.02 23 / 0.38);
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Type — two families. Aurora's body face is Sentient; this build
-   uses Geist (the theme's own declared fallback) because the content
-   is numeric tables. See design.md § Deviations.
+   Coral · Night — hue 23 held, lightness and chroma move only
+   Surfaces rise as they stack, which is the opposite direction from
+   Day and the right one on a dark ground.
+   ───────────────────────────────────────────────────────────── */
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-paper:       oklch(13.5% 0.008 23);   /* near-black, never #000 */
+  --color-paper-2:     oklch(18%   0.010 23);
+  --color-paper-3:     oklch(22.2% 0.012 23);
+  --color-paper-4:     oklch(26.5% 0.013 23);
+  --color-paper-sunk:  oklch(10.5% 0.007 23);
+  --color-rail:        oklch(15.5% 0.009 23);
+
+  --color-faint:       oklch(61.5% 0.020 23);   /* 5.3:1 on paper */
+  --color-muted:       oklch(73%   0.018 23);   /* 8.3:1 */
+  --color-ink-2:       oklch(85%   0.014 23);   /* 12.6:1 */
+  --color-ink:         oklch(96%   0.008 23);   /* 17.8:1 */
+
+  --color-rule:        oklch(29%   0.013 23);
+  --color-rule-2:      oklch(39%   0.016 23);
+
+  /* On a dark ground the soft coral is legible as text (7.5:1), so accent and
+     brand converge here. The fill flips to dark ink, which measures 7.3:1. */
+  --color-brand:       oklch(70%   0.170 23);
+  --color-brand-weak:  oklch(70%   0.170 23 / 0.16);
+  --color-brand-line:  oklch(70%   0.170 23 / 0.38);
+  --color-accent:      oklch(72%   0.165 23);   /* 7.5:1 */
+  --color-accent-hi:   oklch(80%   0.110 23);
+  --color-accent-ink:  oklch(16%   0.035 23);   /* 7.3:1 on the accent fill */
+  --color-accent-weak: oklch(72%   0.165 23 / 0.14);
+  --color-accent-line: oklch(72%   0.165 23 / 0.34);
+
+  --color-positive:      oklch(76% 0.140 152);  /* 9.9:1 */
+  --color-positive-weak: oklch(76% 0.140 152 / 0.16);
+  --color-caution:       oklch(82% 0.140 70);   /* 11.2:1 */
+  --color-caution-weak:  oklch(82% 0.140 70 / 0.16);
+  --color-critical:      oklch(62% 0.210 16);   /* 4.9:1 · dE 0.09 from the brand */
+  --color-critical-weak: oklch(62% 0.210 16 / 0.18);
+
+  --color-focus:       oklch(72% 0.165 23);
+
+  /* On dark, elevation is lightness, not shadow. These stay nearly invisible
+     on purpose: a glow around a card is the tell this theme was built to avoid. */
+  --shadow-whisper:    0 1px 2px oklch(0% 0 0 / 0.30);
+  --shadow-card:       0 1px 3px oklch(0% 0 0 / 0.34);
+  --shadow-lift:       0 2px 6px oklch(0% 0 0 / 0.40);
+  --shadow-modal:      0 32px 80px -30px oklch(0% 0 0 / 0.66);
+  --scrim:             oklch(8% 0.01 23 / 0.72);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Type — one family plus a mono for machine labels.
+   Geist and Geist Mono are self-hosted; see design.md.
    ───────────────────────────────────────────────────────────── */
 :root {
   --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -134,27 +140,38 @@ html[data-theme="light"] {
 
   --display-weight: 600;
 
-  --text-xs:      0.6875rem;
+  /* The micro tier. Status chips, table headers, captions under a number.
+     Nothing in the product sits below this; the previous build scattered
+     8px, 9px and 10px across eighty-odd rules with no tier behind it. */
+  --text-2xs:     0.6875rem;
+  --text-xs:      0.75rem;
   --text-sm:      0.8125rem;
-  --text-base:    1rem;
-  --text-md:      1.125rem;
-  --text-lg:      1.375rem;
-  --text-xl:      1.75rem;
-  --text-2xl:     2.25rem;
-  --text-3xl:     3rem;
-  --text-4xl:     3.75rem;
-  --text-display:   clamp(3rem, 6vw + 1rem, 5.75rem);
-  --text-display-s: clamp(2rem, 3vw + 1rem, 3.5rem);
-  /* The borrowed big-counter scale — streaks, completion, macro totals */
-  --text-counter:   clamp(2.25rem, 3.5vw + 0.5rem, 3.5rem);
+  --text-base:    0.9375rem;
+  --text-md:      1.0625rem;
+  --text-lg:      1.25rem;
+  --text-xl:      1.5rem;
+  --text-2xl:     1.9375rem;
+  --text-3xl:     2.5rem;
+  --text-4xl:     3.25rem;
+  --text-display:   clamp(2.5rem, 5vw + 0.75rem, 4.75rem);
+  --text-display-s: clamp(1.875rem, 3vw + 0.75rem, 3rem);
+  /* The counter scale. Smaller than Aurora's: a number that fills the screen is
+     the dashboard reflex this redesign is removing. */
+  --text-counter:   clamp(1.75rem, 2vw + 0.75rem, 2.5rem);
 
-  --tracking-display: -0.035em;
-  --tracking-tight:   -0.02em;
-  --tracking-label:    0.10em;
+  /* Icon sizes. The nav icons are inline SVG from the sprite in index.html,
+     so they are sized against the control they sit in rather than against the
+     type scale. Used as width/height, never as font-size. */
+  --icon-rail: 0.9375rem;
+  --icon-tab:  1.0625rem;
 
-  --lh-tight:   1.05;
-  --lh-snug:    1.18;
-  --lh-body:    1.55;
+  --tracking-display: -0.028em;
+  --tracking-tight:   -0.016em;
+  --tracking-label:    0.08em;
+
+  --lh-tight:   1.08;
+  --lh-snug:    1.22;
+  --lh-body:    1.58;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -167,22 +184,36 @@ html[data-theme="light"] {
   --space-sm:  0.75rem;
   --space-md:  1rem;
   --space-lg:  1.5rem;
-  --space-xl:  2.5rem;
-  --space-2xl: 4rem;
-  --space-3xl: 6.5rem;
-  --space-4xl: 9rem;
+  --space-xl:  2.25rem;
+  --space-2xl: 3.5rem;
+  --space-3xl: 5.5rem;
+  --space-4xl: 8rem;
 
-  --page-gutter: clamp(1rem, 4vw, 2.5rem);
+  --page-gutter: clamp(1rem, 4vw, 2.25rem);
+  /* The reading measure for a page's own content. Beyond this a list row
+     becomes a scan across empty space, which is what made the old views feel
+     like a dashboard on a wide screen. */
+  --page-measure: 62rem;
 
-  --radius-card:  12px;
+  /* Radii step down from Aurora's 12px. "Oversized rounded cards" was a named
+     complaint; 10px on a card and 8px on a control reads composed, not soft. */
+  --radius-card:  10px;
   --radius-input: 8px;
   --radius-chip:  6px;
   --radius-pill:  999px;
+
+  /* The mobile tab bar's height, so page padding can clear it without magic numbers. */
+  --tabbar-height: 3.75rem;
+  /* The topbar's height, mirroring styles.css: 74px normally, 65px below 720px.
+     Anything fixed to the top of the viewport has to clear it, or it covers the
+     menu button - which on a phone is the only route to Settings and Sign out. */
+  --topbar-height: 4.625rem;
 
   --z-base: 1;
   --z-raised: 10;
   --z-dropdown: 100;
   --z-sticky: 200;
+  --z-tabbar: 300;
   --z-modal: 400;
   --z-toast: 500;
   --z-tooltip: 600;
@@ -194,6 +225,6 @@ html[data-theme="light"] {
 
   --dur-press: 70ms;
   --dur-micro: 120ms;
-  --dur-short: 220ms;
-  --dur-long:  420ms;
+  --dur-short: 200ms;
+  --dur-long:  380ms;
 }

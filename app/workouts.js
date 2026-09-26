@@ -434,6 +434,19 @@ function sessionSets({ completedOnly = false } = {}) {
   }));
   return rows;
 }
+/* Start a workout from anywhere — in practice, from the today card on the
+   dashboard. openSession() reads from state.traineeAssignments, which the
+   Workouts view fills on arrival; coming straight from the dashboard that list
+   may not be loaded yet, so fetch it first and only then open the logger. */
+async function startAssignment(assignmentId) {
+  switchView('workouts');
+  if (!(state.traineeAssignments || []).some(item => item.id === assignmentId)) {
+    state.traineeAssignments = await fetchAssignments();
+    renderTraineeWorkouts();
+  }
+  return openSession(assignmentId, { start: true });
+}
+
 async function openSession(assignmentId, { start = false } = {}) {
   const assignment = (state.traineeAssignments || []).find(item => item.id === assignmentId);
   if (!assignment) return showToast('That workout is no longer available.');

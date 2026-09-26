@@ -62,8 +62,22 @@ for (const match of html.matchAll(/<img\b[^>]*>/g)) {
 
 // Touch targets: the workout logger is used one-handed, mid-set.
 const css = readFileSync(join(root, 'app', 'styles.css'), 'utf8')
-  + readFileSync(join(root, 'app', 'aurora.css'), 'utf8');
+  + readFileSync(join(root, 'app', 'theme.css'), 'utf8');
 check(/min-height:\s*4[4-9]px|min-height:\s*[5-9]\dpx/.test(css), 'no touch-sized targets defined for small screens');
+
+// Navigation on a phone. The side rail is hidden below 45rem, so if the tab bar
+// stops rendering, every destination goes back behind the drawer and nothing on
+// a desktop viewport would show it.
+check(/<nav class="tabbar"[^>]*aria-label=/.test(html), 'the mobile tab bar is missing or has no accessible name');
+const tabViews = [...html.matchAll(/class="tab-item[^"]*"\s+data-view="([a-z]+)"/g)].map(match => match[1]);
+check(tabViews.length >= 5, `the tab bar exposes only ${tabViews.length} destinations`);
+check(tabViews.includes('dashboard'), 'the tab bar has no route back to the landing view');
+// Each role sees exactly five tabs: shared items plus that role's own.
+for (const role of ['trainer', 'trainee']) {
+  const visible = [...html.matchAll(/<button class="tab-item([^"]*)"/g)]
+    .filter(match => !match[1].includes(`${role === 'trainer' ? 'trainee' : 'trainer'}-only`)).length;
+  check(visible === 5, `a ${role} sees ${visible} tabs, not five`);
+}
 
 if (failures.length) {
   console.error('accessibility check failed:');
@@ -80,6 +94,7 @@ console.log(JSON.stringify({
   statusMessagesAnnounced: 'pass',
   imagesHaveAlt: 'pass',
   touchTargets: 'pass',
+  mobileTabBar: 'pass',
   // Contrast is now measured by work/contrast-check.mjs, so it comes off this list.
   stillNeedsAPerson: 'focus order and screen-reader phrasing'
 }, null, 2));

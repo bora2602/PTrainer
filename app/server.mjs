@@ -112,7 +112,7 @@ const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=
 // users, password hashes and live session ids. Serving "whatever is on disk"
 // published all of that to anyone who could reach the port, so the public set
 // is named here and everything else answers 404.
-const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','messages.js','styles.css','tokens.css','aurora.css','fonts.css','robots.txt']);
+const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','messages.js','styles.css','tokens.css','theme.css','fonts.css','robots.txt']);
 const PUBLIC_DIRECTORIES = ['assets/'];
 // The device preview frames the app at phone sizes. It is a development aid, so
 // production neither serves it nor relaxes frame-ancestors for it.

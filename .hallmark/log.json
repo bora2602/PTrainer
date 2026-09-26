@@ -1,5 +1,18 @@
 [
   {
+    "date": "2026-09-25",
+    "scope": "app",
+    "macrostructure": "Marquee Hero (entry) / Index-First (app views) / Narrative Workflow (session logger)",
+    "theme": "coral",
+    "drop": "day+night",
+    "theme_axes": "light 99% + dark 13% / grotesk-sans 600 / warm coral H23",
+    "enrichment": "none \u2014 no canvas, no blooms, no washes",
+    "nav": "N3 side-rail + mobile bottom tab bar (<=720px)",
+    "footer": "none (app shell)",
+    "design_system": "design.md",
+    "brief": "Ptrainer UI/UX redesign \u2014 light-first everyday theme anchored on the brand coral #ef6464, calm non-dashboard layouts, the trainee's next action as the landing view, real navigation on a phone. Replaces Aurora."
+  },
+  {
     "date": "2026-08-22",
     "scope": "app",
     "macrostructure": "Marquee Hero (entry) / Workbench (app views)",
@@ -9,7 +22,7 @@
     "nav": "N3 side-rail",
     "footer": "none (app shell)",
     "design_system": "design.md",
-    "brief": "Ptrainer — trainer/trainee fitness coaching platform, retheme of app/index.html + app/styles.css to Aurora"
+    "brief": "Ptrainer \u2014 trainer/trainee fitness coaching platform, retheme of app/index.html + app/styles.css to Aurora"
   },
   {
     "date": "2026-08-22",
@@ -22,6 +35,6 @@
     "nav": "N3 side-rail",
     "footer": "none (app shell)",
     "design_system": "design.md",
-    "brief": "Superseded — replaced by Aurora the same day; serif display and lowercase register were wrong for numeric app UI"
+    "brief": "Superseded \u2014 replaced by Aurora the same day; serif display and lowercase register were wrong for numeric app UI"
   }
 ]

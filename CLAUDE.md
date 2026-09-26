@@ -20,7 +20,7 @@ choice differs.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Mobile-first; the workout logger must work one-handed on a phone. `app/preview.*` is a development-only device frame at `/preview`. |
+| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Stylesheet order is `fonts` → `tokens` → `styles` → `theme`, and **`theme.css` loads last on purpose** — it is the design system's signature layer and settles any disagreement with the older `styles.css`. Mobile-first; the workout logger must work one-handed on a phone, and below 720px navigation is a bottom tab bar, not the hidden drawer. `app/preview.*` is a development-only device frame at `/preview`. |
 | Backend | Node 24 with `node:http` — no web framework | `app/server.mjs`. Modular boundaries are described in §3. |
 | Database | PostgreSQL 16 in production; PGlite for local development | Same SQL either way. Numbered migrations in `app/migrations/`, applied at startup. |
 | Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. |
@@ -28,6 +28,7 @@ choice differs.
 | File storage | Message attachments only, as `bytea` in PostgreSQL | Photos and PDFs in messages (maintainer decision, 2026-09-25): 5 MB each, type read from the bytes, served only within an active relationship. Anything larger in scope — progress photos, exercise media — moves to private object storage first; see `docs/architecture-decisions.md`. |
 | Static files | Named allow-list in `server.mjs` (`PUBLIC_FILES`) | A new frontend file is not served until it is added there. Never go back to serving the folder: it holds the source and, without Docker, the database files. |
 | Charts | Hand-rolled CSS bars, no charting library | Keeps the dependency count at two. |
+| Design system | **Coral** — light-first, one warm coral signal at hue 23 | Locked in [`design.md`](design.md); tokens in `app/tokens.css`, signature layer in `app/theme.css`. Read `design.md` before changing anything visual. The coral has **two tokens on purpose**: `--color-brand` (`#ef6464`) for marks and fills, `--color-accent` for text and focus — the soft coral measures 3.09:1 and cannot legally carry text. |
 | Deploy | Docker, Compose, optional Caddy edge, Cloudflare tunnel | Env-based config; no secrets in source control (§7). |
 
 **Two runtime dependencies: `pg` and `@electric-sql/pglite`.** That is a feature.
