@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" class="is-booting">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -49,6 +49,21 @@
       <symbol id="i-signout" viewBox="0 0 24 24"><path d="M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14"/><path d="M17.5 8.5 21 12l-3.5 3.5"/><path d="M21 12H10"/></symbol>
     </defs>
   </svg>
+  <!-- Boot screen: on top of everything from the first paint until the session
+       check says whether this is the sign-in screen or the app. Opaque at once so
+       a signed-in person never sees the sign-in form flash; its shapes fade in
+       only after 160ms, so a fast load shows nothing at all. If the script never
+       runs, a CSS animation fades the whole thing away after six seconds and the
+       sign-in screen underneath is usable - it cannot strand anybody. -->
+  <div class="boot-skeleton" id="bootSkeleton" role="status" aria-label="Loading Ptrainer">
+    <div class="boot-brand"><img src="assets/ptrainer-logo.svg" alt="" /><span>Ptrainer</span></div>
+    <div class="boot-body" aria-hidden="true">
+      <span class="sk-bar sk-w4 sk-xl"></span>
+      <span class="sk-bar sk-w5"></span>
+      <span class="sk-bar sk-w3"></span>
+      <div class="boot-blocks"><span class="sk-bar boot-block"></span><span class="sk-bar boot-block"></span><span class="sk-bar boot-block"></span></div>
+    </div>
+  </div>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
     <div class="auth-brand"><img src="assets/ptrainer-logo.svg" alt="" /><span>Ptrainer</span></div>
@@ -242,12 +257,12 @@
         <div class="dashboard-grid">
           <article class="panel schedule-panel">
             <div class="panel-header"><div><h2>Upcoming workouts</h2><p>Loading assignments…</p></div><button data-go="workouts">Open workouts →</button></div>
-            <div class="schedule-list"><div class="template-item"><span>Loading…</span></div></div>
+            <div class="schedule-list"></div>
           </article>
 
           <article class="panel attention-panel">
             <div class="panel-header"><div><h2>Needs attention</h2><p>Loading…</p></div><button data-go="clients">View clients</button></div>
-            <div class="attention-list"><div class="template-item"><span>Loading…</span></div></div>
+            <div class="attention-list"></div>
           </article>
         </div>
 
@@ -512,6 +527,7 @@
   <script src="app.js?v=0.13.0"></script>
   <script src="workouts.js?v=0.13.0"></script>
   <script src="auth.js?v=0.13.0"></script>
+  <script src="skeleton.js?v=0.13.0"></script>
   <script src="messages.js?v=0.13.0"></script>
 </body>
 </html>

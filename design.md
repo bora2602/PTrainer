@@ -247,6 +247,37 @@ server to total a day, by the unit tests, and by the browser to scale a serving.
 A quantity nobody has typed is likewise not a quantity of zero: picking a food
 before entering a serving leaves every macro field empty.
 
+## Loading states
+
+Every view loads behind a skeleton shaped like what is coming — rows for a list,
+cards for a grid, a month grid for the calendar, bubbles for a thread, plain
+columns for a chart. The registry is [`app/skeleton.js`](app/skeleton.js).
+
+- **A refresh never shows one.** Loaders run after every save and on the
+  20-second poll; a skeleton there would blank what somebody is reading. A
+  container shows a skeleton only when it has never been filled for its
+  *context* — the signed-in user plus the client, month or day in view. A
+  different client is a new context, so one client's data never sits on screen
+  under another's name.
+- **Fast loads show nothing.** Shapes fade in after 160ms.
+- **Opacity only.** The pulse is opacity; there is no sliding gradient (that
+  animates `background-position`). Reduced motion: static shapes, no pulse.
+- **Two kinds.** A *fill* skeleton replaces an empty list's markup. A *mask*
+  keeps a static panel's labels and layout and paints only its values as bars
+  (stat cards, the today card, the profile form). A masked region is `inert`:
+  nobody can press "Start workout" before it is known which workout.
+- **It always resolves.** If a loader finishes without drawing into a
+  container, the container says "Couldn't load this" with Try again — never an
+  endless skeleton and never a silently blank panel.
+- **Fill is `--color-rule`**, a surface in both drops. `aria-busy` on the
+  container; the shapes are `aria-hidden`, with one "Loading…" for a screen
+  reader.
+- **The boot screen** covers the first paint until the session is known, so a
+  signed-in person never sees the sign-in form flash. It has a CSS failsafe: if
+  the script never runs, it fades after six seconds and uncovers the page.
+- **Missing is still not zero.** A mask sits over the `—` placeholders; if a load
+  fails, the `—` is what remains, never a 0.
+
 ## Patterns the sign-in screen introduced
 
 - **The copy says what the product does, once.** Headline, one description, one

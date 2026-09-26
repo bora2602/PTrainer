@@ -68,7 +68,7 @@ function wireExerciseCatalog(row) {
   const choose = item => { input.value = item.name; input.dataset.exerciseId = item.id; results.hidden = true; row.querySelector('[name="sets"]').focus(); };
   async function render() {
     results.hidden = false;
-    results.innerHTML = '<span class="exercise-catalog-empty">Loading exercises…</span>';
+    results.innerHTML = skeletonMarkup('rows', 3, { lead: false, chip: false });
     let catalog;
     try { catalog = await getExerciseCatalog(); }
     catch (error) { results.innerHTML = `<span class="exercise-catalog-empty">${escapeText(error.message)} — you can still type a name.</span>`; return; }
@@ -601,7 +601,9 @@ const sessionDialog = $('#sessionDialog');
 async function openSessionDetail(assignment) {
   $('#sessionDialogTitle').textContent = assignment.templateSnapshot.name;
   $('#sessionDialogMeta').textContent = 'Loading…';
-  $('#sessionDialogBody').innerHTML = '';
+  $('#sessionDialogMeta').dataset.skMask = 'text';
+  $('#sessionDialogBody').setAttribute('aria-busy', 'true');
+  $('#sessionDialogBody').innerHTML = skeletonMarkup('detail');
   sessionDialog.showModal();
   try {
     const history = await api(`/api/assigned-workouts/${encodeURIComponent(assignment.id)}/logs`);
@@ -622,6 +624,10 @@ async function openSessionDetail(assignment) {
     }).join('');
   } catch (error) {
     $('#sessionDialogMeta').textContent = error.message;
+    $('#sessionDialogBody').innerHTML = '';
+  } finally {
+    delete $('#sessionDialogMeta').dataset.skMask;
+    $('#sessionDialogBody').removeAttribute('aria-busy');
   }
 }
 $$('[data-close-session]').forEach(button => button.addEventListener('click', () => sessionDialog.close()));
@@ -640,7 +646,6 @@ async function loadClientPage() {
   $('#clientPageAvatar').textContent = initials(client.name);
   $('#clientPageName').textContent = client.name;
   $('#clientPageMeta').textContent = client.email;
-  $('#clientUpcoming').innerHTML = $('#clientCompleted').innerHTML = '<div class="empty-inline"><span>Loading…</span></div>';
   try {
     const assignments = await fetchAssignments(client.id);
     if (state.selectedTraineeId !== client.id) return; // switched away meanwhile

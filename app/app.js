@@ -57,7 +57,7 @@ function initials(name){return name.split(/\s+/).slice(0,2).map(part=>part[0]).j
 // calendar does) so it never shows a day early west of Greenwich.
 function formatDate(value){if(!value)return 'Unscheduled';const date=/^\d{4}-\d{2}-\d{2}$/.test(String(value))?calendarDate(value):new Date(value);return Number.isNaN(date.getTime())?'Unscheduled':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
 
-function showAuth(){state.user=null;$('#appShell').hidden=true;$('#authScreen').hidden=false;document.body.classList.remove('role-trainer','role-trainee');renderDemoBanner();
+function showAuth(){resetSkeletons();state.user=null;$('#appShell').hidden=true;finishBoot();$('#authScreen').hidden=false;document.body.classList.remove('role-trainer','role-trainee');renderDemoBanner();
   // Always land on sign-in. Without this the screen kept whichever panel was
   // open before - so somebody who had just created an account and signed out
   // was shown the signup form again, and worse, an expiry message written to
@@ -67,7 +67,7 @@ function showAuth(){state.user=null;$('#appShell').hidden=true;$('#authScreen').
 // A demo visitor should never be in any doubt that the people and numbers in
 // front of them are invented, and should be one click from leaving.
 function renderDemoBanner(){const banner=$('#demoBanner');if(!banner)return;const demo=Boolean(state.user?.demo);banner.hidden=!demo;document.body.classList.toggle('is-demo',demo);if(demo)$('#demoBannerText').textContent=state.user.role==='TRAINER'?'You are in the trainer demo. Maya Adams and her clients are sample data.':'You are in the client demo. This history is sample data.'}
-async function showApp(user){state.user=user;$('#authScreen').hidden=true;$('#appShell').hidden=false;renderDemoBanner();document.body.classList.toggle('role-trainer',user.role==='TRAINER');document.body.classList.toggle('role-trainee',user.role==='TRAINEE');$('#profileName').textContent=user.name;$('#profileRole').textContent=user.role==='TRAINER'?'Trainer':'Trainee';$('.profile-mini .avatar').textContent=initials(user.name);switchView('dashboard');renderVerificationBanner();await Promise.all([loadDashboard(),loadAssignments(),loadNotifications(),loadOwnExercises()]);await loadNotes()}
+async function showApp(user){if(state.user?.id&&state.user.id!==user.id)resetSkeletons();state.user=user;$('#authScreen').hidden=true;$('#appShell').hidden=false;finishBoot();renderDemoBanner();document.body.classList.toggle('role-trainer',user.role==='TRAINER');document.body.classList.toggle('role-trainee',user.role==='TRAINEE');$('#profileName').textContent=user.name;$('#profileRole').textContent=user.role==='TRAINER'?'Trainer':'Trainee';$('.profile-mini .avatar').textContent=initials(user.name);switchView('dashboard');renderVerificationBanner();await Promise.all([loadDashboard(),loadAssignments(),loadNotifications(),loadOwnExercises()]);await loadNotes()}
 
 // Account mail now links back into the app, so the app has to answer those
 // links. Without this the verification, reset, and invitation emails all land
@@ -215,7 +215,7 @@ async function saveSharingPreferences(){
 }
 for(const selector of ['#shareProgress','#shareNutrition','#shareLogging'])$(selector).addEventListener('change',saveSharingPreferences);
 
-async function initialize(){try{const session=await api('/api/session');state.csrfToken=session.csrfToken;$('.demo-divider').hidden=session.demoMode===false;{/* The device preview is a development aid, and pointless inside itself. */const previewable=session.demoMode!==false&&window.top===window;$('#devicePreviewLink').hidden=!previewable;$('#authPreviewLink').hidden=!previewable};$('.demo-actions').hidden=session.demoMode===false;if(session.authenticated)await showApp(session.user);else showAuth();renderDemoBanner();await handleLinkTokens()}catch{showAuth();showToast('Unable to connect to Ptrainer') }}
+async function initialize(){installSkeletons();try{const session=await api('/api/session');state.csrfToken=session.csrfToken;$('.demo-divider').hidden=session.demoMode===false;{/* The device preview is a development aid, and pointless inside itself. */const previewable=session.demoMode!==false&&window.top===window;$('#devicePreviewLink').hidden=!previewable;$('#authPreviewLink').hidden=!previewable};$('.demo-actions').hidden=session.demoMode===false;if(session.authenticated)await showApp(session.user);else showAuth();renderDemoBanner();await handleLinkTokens()}catch{showAuth();showToast('Unable to connect to Ptrainer') }finally{finishBoot()}}
 // Sign in, registration, the second factor, password reset and the demo buttons
 // now live in auth.js, which loads after this file.
 let polling=false;async function pollLiveData(){if(polling||document.hidden||!state.user)return;polling=true;try{await loadNotifications();if($('.page.active-view')?.id==='messages-view')await loadMessages()}finally{polling=false}}

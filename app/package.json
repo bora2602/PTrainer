@@ -19,7 +19,7 @@
     "test:unit": "node --test validation.test.mjs calendar-feed.test.mjs totp.test.mjs",
     "test:api": "node ../work/security-smoke.mjs && node ../work/workout-logging-check.mjs && node ../work/phase2-check.mjs && node ../work/phase3-check.mjs && node ../work/phase4-check.mjs && node ../work/calendar-window-check.mjs && node ../work/calendar-feed-check.mjs && node ../work/messaging-check.mjs && node ../work/session-check.mjs && node ../work/nutrition-check.mjs",
     "test:authz": "node ../work/endpoint-exposure-check.mjs && node ../work/cross-account-check.mjs && node ../work/auth-hardening-check.mjs",
-    "test:static": "node ../work/accessibility-check.mjs && node ../work/contrast-check.mjs && node ../work/auth-dom-check.mjs",
+    "test:static": "node ../work/accessibility-check.mjs && node ../work/contrast-check.mjs && node ../work/auth-dom-check.mjs && node ../work/skeleton-check.mjs",
     "test:e2e": "node ../work/e2e-coaching-journey.mjs"
   },
   "dependencies": {

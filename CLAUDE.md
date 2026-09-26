@@ -20,7 +20,7 @@ choice differs.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/auth.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Stylesheet order is `fonts` → `tokens` → `styles` → `theme`, and **`theme.css` loads last on purpose** — it is the design system's signature layer and settles any disagreement with the older `styles.css`. Mobile-first; the workout logger must work one-handed on a phone, and below 720px navigation is a bottom tab bar, not the hidden drawer. `app/preview.*` is a development-only device frame at `/preview`. |
+| Frontend | Vanilla JavaScript, no framework, no build step | `app/index.html`, `app/app.js`, `app/workouts.js`, `app/auth.js`, `app/skeleton.js`, `app/messages.js`, `app/*.css`, loaded in that order; `messages.js` is last and calls `initialize()`. Stylesheet order is `fonts` → `tokens` → `styles` → `theme`, and **`theme.css` loads last on purpose** — it is the design system's signature layer and settles any disagreement with the older `styles.css`. Mobile-first; the workout logger must work one-handed on a phone, and below 720px navigation is a bottom tab bar, not the hidden drawer. `app/preview.*` is a development-only device frame at `/preview`. |
 | Backend | Node 24 with `node:http` — no web framework | `app/server.mjs`. Modular boundaries are described in §3. |
 | Database | PostgreSQL 16 in production; PGlite for local development | Same SQL either way. Numbered migrations in `app/migrations/`, applied at startup. |
 | Auth | Server sessions in PostgreSQL, rotated on privilege change | scrypt password hashing, CSRF tokens, origin allow-list, `httpOnly` cookies, `Secure` in production. Optional authenticator-app 2FA (`app/totp.mjs`, RFC 6238 on `node:crypto` HMAC, RFC vectors in `totp.test.mjs`) and server-side proof-of-work bot protection (`app/bot-protection.mjs`). No hosted captcha: it would need the CSP opened to a third party. |
@@ -52,7 +52,10 @@ persistence for each domain is not yet split. On the frontend, the workout flows
 (library, assign, client page, session logger) live in `workouts.js` and
 messaging in `messages.js`, and the signed-out screen (sign-in, signup, second
 factor, reset, demo buttons) plus Settings' two-factor panel in `auth.js`;
-everything else is still in `app.js`.
+everything else is still in `app.js`. Loading states live in `skeleton.js`: a
+registry of every `load*()` function and the containers it fills. **A new loader
+needs an entry there** (or an exemption with a reason) — `work/skeleton-check.mjs`
+fails the build otherwise.
 
 The target stands, and the way to reach it is to extract a module when you next
 have reason to touch that domain, rather than in one sweeping refactor.
