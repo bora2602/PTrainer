@@ -16,3 +16,7 @@ package-lock.json
 graphify-out/
 .graph-build/
 graphify-out.previous/
+
+# Claude account-sync cache: Anthropic-licensed skills keyed by account IDs.
+# Restored automatically on sync, and not ours to republish.
+.claude/skills/synced/
