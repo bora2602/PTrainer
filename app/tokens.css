@@ -217,6 +217,7 @@ html[data-theme="dark"] {
   --z-modal: 400;
   --z-toast: 500;
   --z-tooltip: 600;
+  --z-boot: 700;      /* the boot screen covers everything until the session is known */
 
   --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);

@@ -187,8 +187,6 @@ th {
 .stat-card,
 .workout-summary,
 .exercise-card,
-.client-profile,
-.pricing-card,
 .invite-accept,
 .nutrition-summary-card,
 .settings-panel,
@@ -205,8 +203,6 @@ html[data-theme="dark"] .panel,
 html[data-theme="dark"] .stat-card,
 html[data-theme="dark"] .workout-summary,
 html[data-theme="dark"] .exercise-card,
-html[data-theme="dark"] .client-profile,
-html[data-theme="dark"] .pricing-card,
 html[data-theme="dark"] .invite-accept,
 html[data-theme="dark"] .nutrition-summary-card,
 html[data-theme="dark"] .settings-panel,
@@ -222,21 +218,6 @@ html[data-theme="dark"] .focus-card {
   box-shadow: var(--shadow-card);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .client-profile,
-  .pricing-card,
-  .nutrition-summary-card {
-    transition:
-      transform var(--dur-short) var(--ease-out),
-      border-color var(--dur-short) var(--ease-out);
-  }
-  .client-profile:hover,
-  .pricing-card:hover,
-  .nutrition-summary-card:hover {
-    transform: translateY(-2px);
-    border-color: var(--color-rule-2);
-  }
-}
 
 /* A counter. Tabular, ink-coloured, and no longer huge — a number that fills
    the screen is the reflex this redesign removes. */
@@ -321,6 +302,31 @@ html[data-theme="dark"] .focus-card {
    the rail to icons only. Centre the icon in its cell so it holds the middle in
    both states - a glyph was centred by text-align, an SVG is not. */
 .nav-item .icon { width: var(--icon-rail); height: var(--icon-rail); justify-self: center; }
+/* One icon set for the whole product. The plus, close, menu, chevrons, check
+   and sun/moon used to be text glyphs beside a stroked SVG set - two icon
+   voices. Every icon is the sprite now; this is its size wherever a context
+   does not set one. */
+.icon { width: 1.125rem; height: 1.125rem; }
+:is(.primary-button, .secondary-button, .ghost-button, .text-button, .back-link, .client-links button):has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xs);
+}
+.back-link .icon { width: 1rem; height: 1rem; margin-inline-start: -0.25rem; }
+/* An icon inside a control takes the control's ink, not the faint default. */
+:is(.primary-button, .secondary-button, .ghost-button, .text-button, .back-link, .client-links button, .modal-close, .mobile-menu, .profile-mini button, .set-check, .tray-remove, .remove-exercise, .icon-button) .icon { color: inherit; }
+/* No display here: styles.css hides .mobile-menu on desktop and the profile
+   button in the collapsed rail, and a display value would bring both back. The
+   icon centres itself instead. */
+:is(.modal-close, .mobile-menu, .tray-remove, .remove-exercise, .profile-mini button) > .icon { display: block; margin: auto; }
+.modal-close { min-width: 44px; min-height: 44px; right: var(--space-xs); top: var(--space-xs); }
+.modal-close .icon { width: 1.25rem; height: 1.25rem; }
+.mobile-menu .icon { width: 1.375rem; height: 1.375rem; }
+.theme-switch-icon .icon { width: 1.25rem; height: 1.25rem; }
+.set-check .icon { width: 1.125rem; height: 1.125rem; }
+.create-exercise-choice strong { display: inline-flex; align-items: center; gap: var(--space-3xs); }
+.create-exercise-choice .icon { width: 1rem; height: 1rem; }
 /* The topbar's two icons sit in controls rather than in the nav, so they take
    their size here and their colour from the button they are in. */
 .icon-button .icon,
@@ -403,7 +409,7 @@ html[data-theme="dark"] .focus-card {
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 2px;
+  gap: var(--space-3xs);
   min-height: 48px;
   padding: var(--space-2xs) var(--space-3xs);
   border: 0;
@@ -446,8 +452,10 @@ html[data-theme="dark"] .focus-card {
   text-overflow: clip;
 }
 
+/* Below 360px the icon gives up room rather than the label dropping under
+   the 11px floor (design.md: nothing below --text-2xs). */
 @media (max-width: 22.5rem) {
-  .tab-item { font-size: 0.625rem; letter-spacing: -0.01em; }
+  .tab-item { letter-spacing: -0.01em; padding-inline: 0; }
   .tab-item .icon { width: 1rem; height: 1rem; }
 }
 
@@ -456,9 +464,9 @@ html[data-theme="dark"] .focus-card {
   position: absolute;
   inset-block-start: 2px;
   inset-inline-start: 50%;
-  margin-inline-start: 6px;
+  margin-inline-start: var(--space-2xs);
   min-width: 15px;
-  padding-inline: 4px;
+  padding-inline: var(--space-2xs);
   border-radius: var(--radius-pill);
   background: var(--color-brand);
   color: var(--color-accent-ink);
@@ -962,7 +970,6 @@ html[data-theme="dark"] .trainee-stats { background: var(--color-paper-2); }
 .session-list,
 .note-list,
 .template-list,
-.client-grid,
 .audit-list {
   display: grid;
   gap: 0;
@@ -1027,19 +1034,16 @@ html[data-theme="dark"] .session-group > h2 { background: var(--color-paper-3); 
 }
 html[data-theme="dark"] .session-group.is-collapsible > summary { background: var(--color-paper-3); }
 .session-group.is-collapsible > summary::-webkit-details-marker { display: none; }
-/* The marker is drawn rather than inherited so it can rotate and so it sits on
-   the same baseline as the label in every browser. */
-.session-group.is-collapsible > summary::before {
-  content: "\203a";
-  font-size: var(--text-md);
-  line-height: 1;
-  color: var(--color-faint);
-  transition: transform var(--dur-micro) var(--ease-out);
-}
+/* One disclosure marker for every <details> in the app: the sprite chevron,
+   pointing right when closed and down when open. It used to be a › glyph here
+   and a ⌄ glyph on the exercise library. */
+.summary-chevron,
+.summary-chevron .icon { width: 1rem; height: 1rem; color: var(--color-faint); }
+.summary-chevron { display: inline-grid; flex: none; transition: transform var(--dur-micro) var(--ease-out); }
+details[open] > summary .summary-chevron { transform: rotate(90deg); }
 .session-group.is-collapsible[open] > summary {
   border-bottom: 1px solid var(--color-rule);
 }
-.session-group.is-collapsible[open] > summary::before { transform: rotate(90deg); }
 .session-group.is-collapsible > summary:hover { color: var(--color-ink-2); }
 
 .session-row {
@@ -1062,11 +1066,60 @@ html[data-theme="dark"] .session-row:hover { background: var(--color-paper-3); }
   font-variant-numeric: tabular-nums;
 }
 .session-date small { font-family: var(--font-label); font-size: var(--text-2xs); letter-spacing: 0.06em; }
+/* Room for "Tue, Sep 29" on one line wherever there is room to give. */
+@media (min-width: 30rem) { .session-date { flex-basis: 6.5rem; } }
 .session-text strong { font-size: var(--text-base); font-weight: 600; color: var(--color-ink); }
 .session-text small { font-size: var(--text-sm); color: var(--color-muted); }
-.session-chevron { color: var(--color-faint); }
+.session-chevron { color: var(--color-faint); width: 1.125rem; height: 1.125rem; flex: none; }
+
+/* Overdue is said by the word under the date. The inset caution bar the older
+   sheet drew down the row's edge was the side-stripe tell by another name. */
+.session-row.is-overdue { box-shadow: none; }
+
+/* The trainer's Today and Clients reuse the trainee's row: an avatar where the
+   date would be, and the status word before the chevron. */
+.session-row-main > .client-avatar {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: var(--text-xs);
+}
+.session-row-main > .status { flex: none; }
+.nav-count:empty { display: none; }
+.own-tag { font-size: var(--text-2xs); }
 
 .template-item:hover { background: var(--color-paper-2); }
+
+/* The workout library: one row per workout in a single hairlined container,
+   like every other list. No overflow: hidden here - the row menu opens above
+   its button and would be clipped. */
+.template-rows {
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  margin-bottom: var(--space-lg);
+}
+html[data-theme="dark"] .template-rows { background: var(--color-paper-2); }
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-rule);
+}
+.template-row:last-child { border-bottom: 0; }
+.template-row.just-saved { background: var(--color-accent-weak); }
+.template-row-text { flex: 1; min-width: 0; }
+.template-row h3 { margin: 0; font-size: var(--text-base); letter-spacing: 0; }
+.template-row p { margin: var(--space-3xs) 0 0; font-size: var(--text-sm); color: var(--color-muted); overflow-wrap: anywhere; }
+.template-row .template-row-note { color: var(--color-faint); }
+.template-row-actions { display: flex; align-items: center; gap: var(--space-2xs); flex: none; }
+.card-menu summary .icon { width: var(--icon-tab); height: var(--icon-tab); }
+@media (max-width: 40rem) {
+  .template-row { flex-wrap: wrap; }
+  .template-row-actions { width: 100%; }
+}
 html[data-theme="dark"] .template-item:hover { background: var(--color-paper-3); }
 
 .empty-state {
@@ -1302,22 +1355,6 @@ html[data-theme="dark"] .coach-chip { background: var(--color-paper-3); }
 .coach-message span { color: var(--color-accent); font-size: var(--text-xs); letter-spacing: 0.04em; }
 .coach-message p { font-size: var(--text-sm); color: var(--color-ink-2); }
 
-/* The colour-coded stripe beside each scheduled row said nothing — the colours
-   were assigned in rotation, not by meaning. */
-.color-line,
-.color-line.purple,
-.color-line.green-line,
-.color-line.orange-line,
-.color-line.blue-line { background: var(--color-rule-2); }
-
-.attention-icon {
-  border-radius: var(--radius-chip);
-  background: var(--color-paper-3);
-  color: var(--color-ink-2);
-}
-.attention-icon.warning { background: var(--color-caution-weak); color: var(--color-caution); }
-.attention-icon.progress { background: var(--color-positive-weak); color: var(--color-positive); }
-.attention-icon.note { background: var(--color-accent-weak); color: var(--color-accent); }
 
 /* The inherited sheet drops several labels to 8–10px, which is below a
    comfortable reading size on any screen. Floor them. */
@@ -1334,20 +1371,87 @@ html[data-theme="dark"] .coach-chip { background: var(--color-paper-3); }
 .audit-item:last-child { border-bottom: 0; }
 
 .privacy-panel p { font-size: var(--text-sm); }
+
+/* Settings — a single column of sections on a narrower measure. It used to be
+   two cards, one of them holding eight sub-sections, a bordered danger box and
+   four bordered mini-cards under 7px capitals: card in card in card. */
+#settings-view { max-width: 46rem; }
+.settings-stack { display: grid; gap: var(--space-md); }
+.privacy-panel h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-2xs); }
+.settings-stack h2 { font-size: var(--text-md); }
+/* styles.css rules a line between sibling blocks inside the old combined
+   panel. Each section is its own panel now, so that line only lands in odd
+   places - above the calendar buttons, below a hidden block. */
+.settings-stack .privacy-panel > div + div { border-top: 0; padding-top: 0; }
+.settings-stack .privacy-panel > .privacy-choices { border-top: 1px solid var(--color-rule); padding-top: var(--space-md); }
+
+/* What is stored, and where: label and value on hairline rows, no box. */
+.fact-list { margin: 0; display: grid; border-block: 1px solid var(--color-rule); }
+.fact-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
+}
+.fact-list > div + div { border-top: 1px solid var(--color-rule); }
+.fact-list dt { font-size: var(--text-sm); font-weight: 500; color: var(--color-ink-2); text-transform: none; }
+.fact-list dd { margin: 0; font-size: var(--text-sm); color: var(--color-muted); line-height: 1.5; }
+@media (max-width: 30rem) {
+  .fact-list > div { grid-template-columns: minmax(0, 1fr); gap: var(--space-3xs); }
+}
+
+/* A warning is a glyph and a sentence, like an error - not a coloured stripe
+   down one edge, which design.md bans on cards and callouts alike. */
 .privacy-warning {
+  position: relative;
   font-size: var(--text-sm);
-  color: var(--color-ink-2);
-  border-inline-start: 3px solid var(--color-caution);
-  padding-inline-start: var(--space-sm);
+  color: var(--color-ink-2) !important;   /* styles.css paints the whole paragraph caution, with !important */
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 0 1.5em;
   background: transparent;
 }
+.privacy-warning::before { content: "⚠"; position: absolute; inset-inline-start: 0; color: var(--color-caution); }
+.privacy-warning strong { color: var(--color-ink); }
+
+/* Deleting the account is its own section with a danger button; the section
+   itself does not need to be outlined in red as well. */
+.danger-zone { border-color: var(--color-rule) !important; }
 
 .theme-switch { border-color: var(--color-rule-2); border-radius: var(--radius-card); }
 .theme-switch-track { background: var(--color-paper-4); }
 .theme-switch[aria-checked="true"] .theme-switch-track { background: var(--color-brand); }
 
-.pricing-card.featured { border-color: var(--color-brand-line); }
-.pricing-card h2 { font-size: var(--text-2xl); font-variant-numeric: tabular-nums; }
+/* Plans. Rows like every other list: a name, a price, one action. The
+   three-card tier grid with a featured middle is gone with the claims it
+   carried - no plan adds a feature yet. */
+.plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 8rem;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 4rem;
+  padding: var(--space-sm) var(--space-md);
+  border-block-end: 1px solid var(--color-rule);
+}
+.plan-row:last-child { border-block-end: 0; }
+.plan-name { display: grid; gap: var(--space-3xs); min-width: 0; }
+.plan-name strong { font-size: var(--text-base); font-weight: 600; color: var(--color-ink); }
+.plan-name small { font-size: var(--text-xs); color: var(--color-muted); }
+.plan-price {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.plan-price small { font-family: var(--font-body); font-size: var(--text-xs); font-weight: 400; color: var(--color-muted); }
+.plan-action { font-size: var(--text-sm); color: var(--color-muted); text-align: center; }
+.plan-row .secondary-button { justify-content: center; }
+@media (max-width: 30rem) {
+  .plan-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .plan-row > :last-child { grid-column: 1 / -1; justify-self: start; }
+}
 
 /* The toast. styles.css declares `transition: .25s` with no property list,
    which means "transition everything" - the named anti-pattern, and it also
@@ -1367,6 +1471,38 @@ html[data-theme="dark"] .coach-chip { background: var(--color-paper-3); }
     transform var(--dur-short) var(--ease-out);
 }
 html[data-theme="dark"] #toast { background: var(--color-paper-3); }
+
+/* A toast may hold one action, Undo. styles.css leaves the toast at
+   pointer-events: none even while it shows, which would make the button
+   unpressable. */
+#toast { display: flex; align-items: center; gap: var(--space-md); }
+#toast.show { pointer-events: auto; }
+.toast-action {
+  flex: none;
+  margin-inline-start: auto;
+  padding: var(--space-2xs) var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.toast-action:hover { background: var(--color-accent-weak); }
+@media (pointer: coarse) { .toast-action { min-height: 44px; } }
+
+/* The confirmation dialog, for the few actions that cannot be undone. */
+.confirm-modal { width: min(26rem, calc(100vw - var(--space-xl))); display: grid; gap: var(--space-sm); }
+.confirm-modal h2 { font-size: var(--text-md); margin: 0; }
+.confirm-modal p { margin: 0; font-size: var(--text-sm); color: var(--color-muted); line-height: 1.55; }
+.confirm-modal .modal-actions { display: flex; justify-content: flex-end; gap: var(--space-xs); margin-top: var(--space-xs); }
+
+/* Success said on the control itself: "Saved", for a moment. */
+.primary-button[data-state="success"],
+.secondary-button[data-state="success"] { color: var(--color-positive); background: transparent; border-color: var(--color-positive); }
 
 /* ═══════════════════════════════════════════════════════════════
    17b · Nutrition — the day, then what is in it
@@ -1486,9 +1622,6 @@ html[data-theme="dark"] .nutrition-summary { background: var(--color-paper-2); }
   border-radius: var(--radius-pill);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .nutrition-summary-card:hover { transform: none; border-color: var(--color-rule); }
-}
 
 /* Entries read as rows, like every other list in the app. */
 #nutritionList .nutrition-row {
@@ -1833,6 +1966,9 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
   .page.active-view > * { opacity: 1; transform: none; animation: none; }
   .primary-button:active,
   .secondary-button:active,
+  .ghost-button:active,
+  .danger-button:active,
+  .icon-button:active,
   .tab-item:active,
   .exercise-check:active { transform: none; }
 }
@@ -1843,18 +1979,13 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
 
 /* minmax(0, …) not bare 1fr: a bare track will not shrink below its content
    and pushes the page sideways. */
-.client-grid,
-.dashboard-grid,
-.settings-grid,
 .nutrition-summary,
-.pricing-grid,
 .analytics-grid,
 .nutrition-layout,
 .client-page-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
 }
 
-.dashboard-grid,
 .client-page-grid { gap: var(--space-lg); }
 
 @media (max-width: 53.125rem) {
@@ -1912,21 +2043,14 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
    theme toggle and the system default agree - see design.md.
    =========================================================================== */
 
-/* The intro column dropped its bullet list for one supporting line. The lede
-   carries the description; this is the quieter line under it. */
-.auth-support {
-  font-size: var(--text-sm);
-  color: var(--color-faint);
-  letter-spacing: 0.01em;
-  max-width: 46ch;
-  margin: calc(var(--space-xs) * -1) 0 0;
-}
 
 /* Labels no longer wrap their inputs - a "for" attribute is what a screen
    reader and a password manager both read most reliably, and the reveal button
    cannot sit inside a label without the label's own click behaviour fighting
-   it. .auth-form is a 14px grid, so a label and the field it names are pulled
-   back to the 7px rhythm the nested markup used to give them. */
+   it. The form's grid gap separates fields; a label is pulled back to its own
+   field, so the pair reads as one. Both are on the spacing scale. */
+.auth-form,
+.security-panel form { gap: var(--space-md); }
 .auth-form label + input,
 .auth-form label + .password-field,
 .auth-form label + .code-input,
@@ -1935,7 +2059,7 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
 .auth-form .password-field + small,
 .security-panel label + input,
 .security-panel label + .password-field,
-.security-panel label + .code-input { margin-top: -7px; }
+.security-panel label + .code-input { margin-top: calc(var(--space-xs) * -1); }
 
 .auth-form > div > h2:focus-visible,
 .auth-form h2:focus { outline: none; }
@@ -2007,7 +2131,9 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
   gap: var(--space-sm);
   flex-wrap: wrap;
   padding: var(--space-xs) var(--space-md);
-  background: var(--color-accent-weak);
+  /* The weak accent is translucent; laid over paper so the rail's edge line
+     in the shell background does not show through the banner. */
+  background: linear-gradient(var(--color-accent-weak), var(--color-accent-weak)), var(--color-paper);
   border-bottom: 1px solid var(--color-accent-line);
   color: var(--color-ink-2);
   font-size: var(--text-xs);
@@ -2034,11 +2160,14 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
 .security-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
 .security-panel form { display: grid; gap: var(--space-xs); justify-items: start; }
 .security-panel form > input, .security-panel form > .password-field { width: 100%; max-width: 22rem; }
+/* An inline confirmation inside the section: set off by a hairline, not
+   boxed - a box here was a card inside a card. */
 .security-confirm {
-  border: 1px solid var(--color-rule-2);
-  border-radius: var(--radius-card);
-  padding: var(--space-md);
-  background: var(--color-paper-2);
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+  border-radius: 0;
+  padding: var(--space-md) 0 0;
+  background: transparent;
 }
 
 /* Status carries a word as well as a colour - "On."/"Off." - because colour is
@@ -2134,7 +2263,7 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
 /* The code and recovery fields sit in their own wrappers so one can replace the
    other; inside a wrapper the label/field spacing comes from the wrapper's gap,
    not from the negative margin used for bare siblings of .auth-form. */
-#twoFactorCodeField, #twoFactorRecoveryField { display: grid; gap: 7px; }
+#twoFactorCodeField, #twoFactorRecoveryField { display: grid; gap: var(--space-xs); }
 #twoFactorCodeField label + input, #twoFactorRecoveryField label + input { margin-top: 0; }
 #twoFactorRecoveryField small { font-size: var(--text-xs); color: var(--color-muted); }
 
@@ -2183,19 +2312,6 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
 .sk-lead { width: 2.25rem; height: 2.25rem; flex: none; border-radius: var(--radius-input); }
 .sk-chip { width: 4.5rem; height: 1.375rem; flex: none; border-radius: var(--radius-chip); }
 
-.sk-card {
-  display: grid;
-  gap: var(--space-sm);
-  align-content: start;
-  padding: var(--space-lg);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius-card);
-  background: var(--color-paper);
-  min-height: 11rem;
-}
-.sk-card .sk-button { width: 7rem; height: 2.25rem; border-radius: var(--radius-pill); margin-top: var(--space-xs); }
-
-.sk-tr td { padding: var(--space-2xs) var(--space-md); }
 /* The same bordered day box .calendar-day draws, so the month grid is already
    a grid while it loads. */
 .sk-cal { vertical-align: top; padding: 3px; }
@@ -2204,7 +2320,7 @@ html[data-theme="dark"] .theme-switch-icon { color: var(--color-accent-hi); }
   align-content: space-between;
   gap: var(--space-xs);
   min-height: 56px;
-  padding: 7px 8px;
+  padding: var(--space-xs);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-input);
   background: var(--color-paper-2);
@@ -2290,7 +2406,7 @@ select[data-sk-mask="text"] { color: transparent !important; }
 .boot-skeleton {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-boot);
   display: grid;
   grid-template-rows: auto 1fr;
   gap: var(--space-2xl);
@@ -2309,8 +2425,9 @@ select[data-sk-mask="text"] { color: transparent !important; }
   margin-top: 8vh;
   animation: sk-appear var(--dur-short) var(--ease-out) 160ms both;
 }
-.boot-blocks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-md); margin-top: var(--space-lg); }
-.boot-block { height: 4.5rem; border-radius: var(--radius-card); }
+/* Rows, not three equal cards: every signed-in view now opens on a list. */
+.boot-blocks { display: grid; gap: var(--space-sm); margin-top: var(--space-lg); }
+.boot-block { height: 3rem; border-radius: var(--radius-input); }
 @keyframes boot-failsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 html.is-booting { overflow: hidden; }
 

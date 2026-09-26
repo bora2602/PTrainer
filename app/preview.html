@@ -6,6 +6,8 @@
   <meta name="robots" content="noindex" />
   <title>Device preview · Ptrainer</title>
   <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="fonts.css" />
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="preview.css" />
 </head>
 <body>
@@ -15,7 +17,7 @@
       <label class="preview-field">Device
         <select id="deviceSelect"></select>
       </label>
-      <button type="button" id="rotateButton" aria-pressed="false" title="Rotate">⟳ Rotate</button>
+      <button type="button" id="rotateButton" aria-pressed="false" >Rotate</button>
       <label class="preview-field">Zoom
         <select id="zoomSelect">
           <option value="fit">Fit</option>
@@ -24,14 +26,14 @@
           <option value="0.5">50%</option>
         </select>
       </label>
-      <button type="button" id="reloadButton" title="Reload the app">↻ Reload</button>
-      <a class="preview-link" href="/" target="_blank" rel="noopener">Open full app ↗</a>
+      <button type="button" id="reloadButton" >Reload app</button>
+      <a class="preview-link" href="/" target="_blank" rel="noopener">Open full app</a>
     </div>
   </header>
   <main class="preview-stage" id="stage">
     <div class="device" id="device">
       <div class="device-screen" id="screen">
-        <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="status-icons">▮▮▮ ◔</span></div>
+        <div class="status-bar" aria-hidden="true">Status bar</div>
         <iframe id="appFrame" title="Ptrainer at the selected device size" src="/"></iframe>
       </div>
     </div>

@@ -37,12 +37,6 @@ const SKELETON_SHAPES = {
   // line, and an optional trailing status chip.
   rows: (count, { lead = true, chip = true } = {}) => Array.from({ length: count }, (_, index) =>
     `<div class="sk sk-row" aria-hidden="true">${lead ? '<span class="sk-bar sk-lead"></span>' : ''}<span class="sk-lines">${skBar(skWidth(index))}${skBar(skWidth(index + 3), 'sk-sm')}</span>${chip ? '<span class="sk-bar sk-chip"></span>' : ''}</div>`).join(''),
-  cards: count => Array.from({ length: count }, (_, index) =>
-    `<div class="sk sk-card" aria-hidden="true"><span class="sk-bar sk-lead"></span>${skBar(skWidth(index))}${skBar(skWidth(index + 2), 'sk-sm')}${skBar('sk-w6', 'sk-sm')}<span class="sk-bar sk-button"></span></div>`).join(''),
-  // A table body keeps its column structure, so the header above it does not
-  // jump when real rows arrive.
-  table: (count, { cols = 4 } = {}) => Array.from({ length: count }, (_, index) =>
-    `<tr class="sk sk-tr" aria-hidden="true"><td colspan="${cols}"><div class="sk-row sk-row-flat"><span class="sk-bar sk-lead"></span><span class="sk-lines">${skBar(skWidth(index))}${skBar(skWidth(index + 3), 'sk-sm')}</span><span class="sk-bar sk-chip"></span></div></td></tr>`).join(''),
   calendar: () => Array.from({ length: 6 }, () =>
     `<tr class="sk" aria-hidden="true">${Array.from({ length: 7 }, (_, day) => `<td class="sk-cal"><div class="sk-cal-day"><span class="sk-bar sk-cal-date"></span>${day % 3 === 1 ? skBar('sk-w5', 'sk-sm') : ''}</div></td>`).join('')}</tr>`).join(''),
   // Bars of varying height, so it reads as a chart before it is one. Heights
@@ -62,7 +56,7 @@ const SKELETON_SHAPES = {
 // there aria-busy on the container is the only signal.
 function skeletonMarkup(shape, count = 3, options = {}) {
   const shapes = SKELETON_SHAPES[shape](count, options);
-  return ['table', 'calendar'].includes(shape) ? shapes : `<p class="sk sr-only">Loading…</p>${shapes}`;
+  return shape === 'calendar' ? shapes : `<p class="sk sr-only">Loading…</p>${shapes}`;
 }
 
 // Mask shapes keep the container's own markup and paint its text as bars in
@@ -77,7 +71,7 @@ const skUserKey = () => state.user?.id || 'anon';
 
 const SKELETON_VIEWS = [
   { loader: 'loadDashboard', targets: () => state.user?.role === 'TRAINER'
-      ? [['#trainerDashboard .welcome-row', 'mask'], ['#trainerDashboard .focus-card', 'mask'], ['#trainerDashboard .stat-grid', 'mask'], ['.schedule-list', 'rows', 3], ['.schedule-panel .panel-header p', 'text'], ['.attention-list', 'rows', 2, { chip: false }], ['.attention-panel .panel-header p', 'text'], ['#dashboardClientRows', 'table', 4, { cols: 6 }], ['#clientGrid', 'cards', 3], ['#clientPicker', 'text']]
+      ? [['#trainerDashboard .welcome-row', 'mask'], ['.attention-list', 'rows', 2, { chip: false }], ['.schedule-list', 'rows', 3, { chip: false }], ['#clientFigures', 'mask'], ['#clientList', 'rows', 4], ['#clientPicker', 'text']]
       : [['#todayCard', 'mask'], ['#traineeDashboard .trainee-stats', 'mask'], ['#traineeDashboard .coach-chip', 'text']] },
   // Trainee-only: for a trainer this loader returns at once, and its containers
   // are not theirs to show.
@@ -85,7 +79,7 @@ const SKELETON_VIEWS = [
   { loader: 'loadInvitations', targets: () => [['#invitationList', 'rows', 2, { lead: false }]] },
   { loader: 'loadClientPage', key: () => state.selectedTraineeId, targets: () => [['#clientStats', 'stats', 4], ['#clientCompleted', 'rows', 3], ['#clientUpcoming', 'rows', 2]] },
   { loader: 'loadNotes', key: () => state.selectedTraineeId, targets: () => [['#noteList', 'rows', 2, { lead: false, chip: false }]] },
-  { loader: 'loadTemplates', targets: () => [['#templateList', 'cards', 3], ['#templateCount', 'text']] },
+  { loader: 'loadTemplates', targets: () => [['#templateList', 'rows', 3, { lead: false }], ['#templateCount', 'text']] },
   { loader: 'loadOwnExercises', targets: () => [['#ownExerciseList', 'rows', 3, { lead: false }]] },
   { loader: 'loadCalendar', key: () => `${+calendarMonth()}${traineeQuery()}`, targets: () => [['#calendarBody', 'calendar'], ['#calendarSummary', 'text']] },
   { loader: 'loadProgress', key: () => traineeQuery(), targets: () => [['#progressChart', 'chart'], ['#progressEntries', 'rows', 4, { lead: false }], ['#progressLatest', 'text']] },

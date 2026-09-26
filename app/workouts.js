@@ -81,7 +81,7 @@ function wireExerciseCatalog(row) {
       .slice(0, 8);
     const offerCreate = term.length >= 2 && !exact;
     results.innerHTML = matches.map(item => `<button type="button" role="option" data-exercise-choice="${escapeText(item.id)}"><strong>${escapeText(item.name)}${item.canManage ? ' <span class="own-tag">Yours</span>' : ''}</strong><small>${escapeText([item.muscleGroup, item.equipment].filter(Boolean).join(' · ') || 'Your exercise')}</small></button>`).join('')
-      + (offerCreate ? `<button type="button" class="create-exercise-choice" data-exercise-create><strong>＋ Save “${escapeText(input.value.trim())}” as a new exercise</strong><small>Only you can see it, and you can reuse it in any workout</small></button>` : '')
+      + (offerCreate ? `<button type="button" class="create-exercise-choice" data-exercise-create><strong><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>Save “${escapeText(input.value.trim())}” as a new exercise</strong><small>Only you can see it, and you can reuse it in any workout</small></button>` : '')
       || '<span class="exercise-catalog-empty">Type to search 190+ exercises, or name a new one.</span>';
     results.querySelectorAll('[data-exercise-choice]').forEach(button => button.addEventListener('mousedown', event => {
       event.preventDefault();
@@ -107,7 +107,7 @@ function wireExerciseCatalog(row) {
 /* ── Exercise rows (shared by the workout builder and the assignment editor) ── */
 function exerciseRowMarkup(values = {}, index = 0) {
   const unit = values.loadUnit || state.lastLoadUnit || 'kg';
-  return `<div class="builder-exercise-top"><span class="builder-index" aria-hidden="true">${index + 1}</span><div class="exercise-name-field"><label>Exercise<input name="exerciseName" maxlength="100" value="${escapeText(values.name || '')}" data-exercise-id="${escapeText(values.exerciseId || '')}" placeholder="Search, or type a new exercise" autocomplete="off" required /></label><div class="exercise-catalog-results" role="listbox" aria-label="Exercise matches" hidden></div></div><button type="button" class="remove-exercise" aria-label="Remove exercise">×</button></div>`
+  return `<div class="builder-exercise-top"><span class="builder-index" aria-hidden="true">${index + 1}</span><div class="exercise-name-field"><label>Exercise<input name="exerciseName" maxlength="100" value="${escapeText(values.name || '')}" data-exercise-id="${escapeText(values.exerciseId || '')}" placeholder="Search, or type a new exercise" autocomplete="off" required /></label><div class="exercise-catalog-results" role="listbox" aria-label="Exercise matches" hidden></div></div><button type="button" class="remove-exercise" aria-label="Remove exercise"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>`
     + `<div class="builder-exercise-grid"><label>Sets<input name="sets" type="number" inputmode="numeric" min="1" max="20" value="${values.sets || 3}" required /></label><label>Reps<input name="reps" type="number" inputmode="numeric" min="1" max="1000" value="${values.reps || 10}" required /></label><label class="weight-field">Weight<span class="weight-input"><input name="targetLoad" type="number" inputmode="decimal" min="0" max="10000" step="0.5" value="${values.targetLoad ?? ''}" placeholder="—" /><select name="loadUnit" aria-label="Weight unit">${WEIGHT_UNITS.map(option => `<option${option === unit ? ' selected' : ''}>${option}</option>`).join('')}</select></span></label><label>Rest (sec)<input name="rest" type="number" inputmode="numeric" min="0" max="900" step="15" value="${values.restSeconds ?? 60}" required /></label></div>`
     + `<label class="builder-note">Coaching note<input name="note" maxlength="200" value="${escapeText(values.note || '')}" placeholder="Optional, e.g. pause at the bottom" /></label>`;
 }
@@ -153,15 +153,21 @@ async function loadTemplates() {
   }
 }
 function renderTemplates(highlightId = null) {
-  const templates = [...state.workoutTemplates].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const templates = state.workoutTemplates.filter(template => !isPendingDelete(template.id)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   $('#templateCount').textContent = templates.length ? plural(templates.length, 'workout') : '';
-  $('#templateList').innerHTML = templates.length ? templates.map(template => `<article class="workout-card${template.id === highlightId ? ' just-saved' : ''}" data-template-card="${escapeText(template.id)}">
-      <div class="workout-card-body"><h3>${escapeText(template.name)}</h3><p>${plural(template.exercises.length, 'exercise')}${template.description ? ` · ${escapeText(template.description)}` : ''}</p>
-      <ul class="workout-card-exercises">${template.exercises.slice(0, 4).map(exercise => `<li><span>${escapeText(exercise.name)}</span><small>${escapeText(prescriptionText(exercise))}</small></li>`).join('')}${template.exercises.length > 4 ? `<li class="more-exercises">+ ${template.exercises.length - 4} more</li>` : ''}</ul></div>
-      <div class="workout-card-actions"><button class="primary-button" data-assign-template="${escapeText(template.id)}">Assign</button><button class="secondary-button" data-edit-template="${escapeText(template.id)}">Edit</button><details class="card-menu"><summary aria-label="More actions for ${escapeText(template.name)}">•••</summary><div class="card-menu-items"><button type="button" data-duplicate-template="${escapeText(template.id)}">Duplicate</button><button type="button" class="danger" data-delete-template="${escapeText(template.id)}">Delete</button></div></details></div>
-    </article>`).join('')
-    : '<div class="panel empty-state"><h2>No workouts yet</h2><p>Create a workout once, then assign it to any of your clients — as often as you like.</p><button class="primary-button" data-create-workout>＋ Create workout</button></div>';
-  if (highlightId) $(`[data-template-card="${highlightId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Index-First (design.md): one row per workout - what it is, what is in it,
+  // and the three things you do with it. The first few exercises are named so
+  // two similar workouts can be told apart without opening either.
+  $('#templateList').innerHTML = templates.length ? templates.map(template => {
+    const names = template.exercises.map(exercise => exercise.name), shown = names.slice(0, 3).join(', ');
+    const meta = [plural(template.exercises.length, 'exercise'), shown && `${shown}${names.length > 3 ? ` +${names.length - 3} more` : ''}`].filter(Boolean).join(' · ');
+    return `<article class="template-row${template.id === highlightId ? ' just-saved' : ''}" data-template-card="${escapeText(template.id)}">
+      <div class="template-row-text"><h3>${escapeText(template.name)}</h3><p>${escapeText(meta)}</p>${template.description ? `<p class="template-row-note">${escapeText(template.description)}</p>` : ''}</div>
+      <div class="template-row-actions"><button class="secondary-button" data-assign-template="${escapeText(template.id)}">Assign</button><button class="ghost-button" data-edit-template="${escapeText(template.id)}">Edit</button><details class="card-menu"><summary aria-label="More actions for ${escapeText(template.name)}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-more"/></svg></summary><div class="card-menu-items"><button type="button" data-duplicate-template="${escapeText(template.id)}">Duplicate</button><button type="button" class="danger" data-delete-template="${escapeText(template.id)}">Delete</button></div></details></div>
+    </article>`;
+  }).join('')
+    : '<div class="empty-state compact"><h2>No workouts yet</h2><p>Create a workout once, then assign it to any of your clients — as often as you like.</p><button class="primary-button" data-create-workout><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>Create workout</button></div>';
+  if (highlightId) $(`[data-template-card="${highlightId}"]`)?.scrollIntoView({ behavior: scrollMotion(), block: 'center' });
 }
 $('#templateList').addEventListener('click', async event => {
   const target = event.target.closest('button');
@@ -174,14 +180,19 @@ $('#templateList').addEventListener('click', async event => {
   try {
     if (duplicateTemplate) {
       const copy = await api(`/api/workout-templates/${encodeURIComponent(duplicateTemplate)}/duplicate`, { method: 'POST', body: '{}' });
-      state.workoutTemplates.push(copy.template); renderTemplates(copy.template.id); showToast('Workout duplicated');
+      state.workoutTemplates.push(copy.template); renderTemplates(copy.template.id);
     }
     if (deleteTemplate) {
       const template = state.workoutTemplates.find(item => item.id === deleteTemplate);
-      if (!confirm(`Delete “${template?.name}”? Clients who already have it keep their copy.`)) return;
-      await api(`/api/workout-templates/${encodeURIComponent(deleteTemplate)}`, { method: 'DELETE', body: '{}' });
-      state.workoutTemplates = state.workoutTemplates.filter(item => item.id !== deleteTemplate);
-      renderTemplates(); showToast('Workout deleted. Assignments already made are unaffected.');
+      deleteWithUndo({
+        id: deleteTemplate,
+        message: `Deleted “${template?.name}”. Clients who have it keep their copy.`,
+        redraw: () => renderTemplates(),
+        commit: async () => {
+          await api(`/api/workout-templates/${encodeURIComponent(deleteTemplate)}`, { method: 'DELETE', body: '{}', keepalive: true });
+          state.workoutTemplates = state.workoutTemplates.filter(item => item.id !== deleteTemplate);
+        }
+      });
     }
   } catch (error) { showToast(error.message); }
 });
@@ -204,8 +215,8 @@ function openTemplateDialog(template = null) {
   templateDialog.showModal();
   templateForm.elements.name.focus();
 }
-function closeTemplateDialog() {
-  if (templateDirty && !confirm('Discard this workout? What you entered will be lost.')) return;
+async function closeTemplateDialog() {
+  if (templateDirty && !await confirmAction({ title: 'Discard this workout?', body: 'What you entered will be lost.', accept: 'Discard', danger: true })) return;
   templateDialog.close();
 }
 templateForm.addEventListener('input', () => { templateDirty = true; });
@@ -232,7 +243,7 @@ templateForm.addEventListener('submit', async event => {
     templateDialog.close();
     if ($('.page.active-view')?.id !== 'builder-view') switchView('builder');
     renderTemplates(result.template.id);
-    showToast(editingId ? 'Workout updated' : `“${result.template.name}” saved. Press Assign to give it to clients.`, 5000);
+    if (!editingId) showToast(`“${result.template.name}” saved. Press Assign to give it to clients.`, 5000);
   } catch (error) { $('#templateError').textContent = error.message; }
   finally { setBusy(button, false); }
 });
@@ -308,7 +319,7 @@ async function loadOwnExercises() {
   catch (error) { $('#ownExerciseList').innerHTML = `<div class="template-item"><span>${escapeText(error.message)}</span></div>`; }
 }
 function renderOwnExercises() {
-  const owned = (state.exerciseCatalog || []).filter(item => item.canManage);
+  const owned = (state.exerciseCatalog || []).filter(item => item.canManage && !isPendingDelete(item.id));
   $('#ownExerciseCount').textContent = owned.length ? `(${owned.length})` : '';
   $('#ownExerciseList').innerHTML = owned.map(item => `<article class="note-row" data-own-exercise="${escapeText(item.id)}"><div><p>${escapeText(item.name)}</p><small>${escapeText([item.muscleGroup, item.equipment].filter(Boolean).join(' · ') || 'No details yet')}</small></div><div class="note-actions"><button class="secondary-button" data-exercise-edit="${escapeText(item.id)}">Edit</button><button class="secondary-button" data-exercise-retire="${escapeText(item.id)}">Remove</button></div></article>`).join('')
     || '<div class="template-item"><span>None yet. Add one here, or type a new name while building a workout.</span></div>';
@@ -320,9 +331,15 @@ $('#ownExerciseList').addEventListener('click', async event => {
   if (!exercise) return;
   try {
     if (button.dataset.exerciseRetire) {
-      if (!confirm(`Remove “${exercise.name}” from your exercises? Workouts that already use it keep it.`)) return;
-      await api(`/api/exercises/${encodeURIComponent(exercise.id)}`, { method: 'DELETE', body: '{}' });
-      showToast('Exercise removed');
+      return deleteWithUndo({
+        id: exercise.id,
+        message: `Removed “${exercise.name}”. Workouts that use it keep it.`,
+        redraw: renderOwnExercises,
+        commit: async () => {
+          await api(`/api/exercises/${encodeURIComponent(exercise.id)}`, { method: 'DELETE', body: '{}', keepalive: true });
+          await loadOwnExercises();
+        }
+      });
     } else {
       const form = $('#exerciseForm');
       form.dataset.editing = exercise.id;
@@ -343,7 +360,6 @@ $('#exerciseForm').addEventListener('submit', async event => {
     await api(editing ? `/api/exercises/${encodeURIComponent(editing)}` : '/api/exercises', { method: editing ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
     form.reset(); delete form.dataset.editing; $('#exerciseSubmit').textContent = 'Add exercise';
     await loadOwnExercises();
-    showToast(editing ? 'Exercise updated' : 'Exercise added. It now shows up when you build a workout.');
   } catch (error) { $('#exerciseError').textContent = error.message; }
 });
 
@@ -377,7 +393,7 @@ function sessionRow(item, { action = '' } = {}) {
     : `${plural(count, 'exercise')}${started ? ' · in progress' : ''}`;
   const overdue = !done && item.dueDate && item.dueDate < todayKey();
   return `<article class="session-row${done ? ' is-done' : ''}${overdue ? ' is-overdue' : ''}">
-    <button class="session-row-main" data-open-session="${escapeText(item.id)}"><span class="session-date"><strong>${escapeText(dueLabel(item.dueDate))}</strong>${overdue ? '<small>Overdue</small>' : done ? '<small>Done</small>' : ''}</span><span class="session-text"><strong>${escapeText(snapshot.name)}</strong><small>${escapeText(meta)}</small></span><span class="session-chevron" aria-hidden="true">›</span></button>
+    <button class="session-row-main" data-open-session="${escapeText(item.id)}"><span class="session-date"><strong>${escapeText(dueLabel(item.dueDate))}</strong>${overdue ? '<small>Overdue</small>' : done ? '<small>Done</small>' : ''}</span><span class="session-text"><strong>${escapeText(snapshot.name)}</strong><small>${escapeText(meta)}</small></span><svg class="icon session-chevron" aria-hidden="true" focusable="false"><use href="#i-next"/></svg></button>
     ${action}
   </article>`;
 }
@@ -522,7 +538,7 @@ function setRowMarkup(exerciseIndex, set, setIndex) {
     <label class="set-cell"><span>${escapeText(set.loadUnit)}</span><input data-field="loadValue" type="number" inputmode="decimal" min="0" max="100000" step="0.5" value="${value('loadValue')}" aria-label="Set ${setIndex + 1} weight in ${escapeText(set.loadUnit)}" /></label>
     <label class="set-cell"><span>RPE</span><input data-field="exertion" type="number" inputmode="decimal" min="1" max="10" step="0.5" value="${value('exertion')}" placeholder="–" aria-label="Set ${setIndex + 1} effort, 1 to 10" /></label>
     <button type="button" class="set-note-toggle${set.note ? ' has-note' : ''}" aria-label="Note for set ${setIndex + 1}" aria-expanded="false">✎</button>
-    <button type="button" class="set-check" aria-pressed="${set.completed}" aria-label="Set ${setIndex + 1} done">✓</button>
+    <button type="button" class="set-check" aria-pressed="${set.completed}" aria-label="Set ${setIndex + 1} done"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg></button>
     <label class="set-note" hidden><span class="sr-only">Note for set ${setIndex + 1}</span><input data-field="note" type="text" maxlength="500" value="${value('note')}" placeholder="How did it feel?" /></label>
   </div>`;
 }
@@ -530,7 +546,7 @@ function renderSession() {
   $('#exerciseList').innerHTML = session.exercises.map((exercise, index) => `<article class="exercise-card session-exercise" data-exercise-card="${index}">
       <header><div><h2>${escapeText(exercise.name)}</h2><p>${escapeText(prescriptionText(session.assignment.templateSnapshot.exercises[index]))}</p>${exercise.note ? `<p class="coach-cue">Coach: ${escapeText(exercise.note)}</p>` : ''}</div></header>
       <div class="set-rows">${exercise.sets.map((set, setIndex) => setRowMarkup(index, set, setIndex)).join('')}</div>
-      <button type="button" class="text-button add-set" data-add-set="${index}">＋ Add set</button>
+      <button type="button" class="text-button add-set" data-add-set="${index}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>Add set</button>
     </article>`).join('');
   updateSessionProgress();
 }
@@ -582,15 +598,14 @@ $('#leaveSession').addEventListener('click', () => {
 $('#finishWorkout').addEventListener('click', async event => {
   const button = event.currentTarget, done = sessionSets({ completedOnly: true }), total = session.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
   if (!done.length) return showToast('Tick the sets you did first. To stop for now, go back — your progress is saved.', 5000);
-  if (done.length < total && !confirm(`You ticked ${done.length} of ${total} sets. Finish the workout?`)) return;
+  if (done.length < total && !await confirmAction({ title: `Finish with ${done.length} of ${total} sets?`, body: 'Sets you did not tick are left out of the log.', accept: 'Finish workout' })) return;
   setBusy(button, true, 'Saving…');
   try {
     clearTimeout(session.saveTimer);
     const key = `workout_${Date.now()}_${crypto.randomUUID().replaceAll('-', '')}`;
-    const data = await api(`/api/assigned-workouts/${encodeURIComponent(session.assignment.id)}/logs`, { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify({ sets: done, ...(session.startedAt ? { startedAt: session.startedAt.toISOString() } : {}) }) });
-    const name = session.assignment.templateSnapshot.name;
+    await api(`/api/assigned-workouts/${encodeURIComponent(session.assignment.id)}/logs`, { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify({ sets: done, ...(session.startedAt ? { startedAt: session.startedAt.toISOString() } : {}) }) });
+    // Silent success: the list the logger returns to shows it done, with its time.
     closeSession();
-    showToast(`${name} done${data.log.durationSeconds != null ? ` in ${formatDuration(data.log.durationSeconds)}` : ''}. Your trainer can see every set.`, 5000);
     loadDashboard();
   } catch (error) { showToast(error.message); }
   finally { setBusy(button, false); }
@@ -652,7 +667,7 @@ async function loadClientPage() {
     state.clientAssignments = assignments;
     const groups = splitAssignments(assignments), editable = item => item.status === 'ASSIGNED' ? `<button class="secondary-button" data-edit-assignment="${escapeText(item.id)}">Edit</button>` : '';
     const open = [...groups.overdue, ...groups.today, ...groups.upcoming];
-    $('#clientStats').innerHTML = `<div><strong>${client.completionRate}%</strong><span>completion</span></div><div><strong>${groups.done.length}</strong><span>completed</span></div><div><strong>${groups.today.length + groups.upcoming.length}</strong><span>coming up</span></div><div><strong>${groups.overdue.length}</strong><span>overdue</span></div>`;
+    $('#clientStats').innerHTML = `<div><strong>${client.completionRate == null ? '—' : `${client.completionRate}%`}</strong><span>completion</span></div><div><strong>${groups.done.length}</strong><span>completed</span></div><div><strong>${groups.today.length + groups.upcoming.length}</strong><span>coming up</span></div><div><strong>${groups.overdue.length}</strong><span>overdue</span></div>`;
     const shown = state.clientShowAllScheduled ? open.slice(0, 50) : open.slice(0, 5);
     $('#clientUpcoming').innerHTML = shown.map(item => sessionRow(item, { action: editable(item) })).join('') + (open.length > shown.length ? `<button class="text-button show-more" type="button" data-show-all-scheduled>Show all ${open.length}</button>` : '')
       || `<div class="empty-inline"><strong>Nothing scheduled.</strong><span>Assign a workout to get ${escapeText(client.name.split(' ')[0])} started.</span></div>`;

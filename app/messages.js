@@ -125,7 +125,7 @@ async function loadMessages({ scrollToEnd = false } = {}) {
 
 $('#newMessageCount').addEventListener('click', () => {
   const list = $('#messageList');
-  list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+  list.scrollTo({ top: list.scrollHeight, behavior: scrollMotion() });
   thread.unseen = 0; $('#newMessageCount').hidden = true;
 });
 $('#messageList').addEventListener('scroll', () => {
@@ -185,7 +185,7 @@ function renderAttachmentTray() {
   // the rejection rather than after it.
   $('#attachmentHint').hidden = !composer.files.length;
   $('#attachmentHint').textContent = `${composer.files.length} of ${MAX_ATTACHMENTS} attached. ${ATTACHMENT_RULES}`;
-  tray.innerHTML = composer.files.map((file, index) => `<div class="tray-item">${file.isImage ? `<img src="${file.preview}" alt="" />` : '<span class="tray-file" aria-hidden="true">📄</span>'}<span class="tray-name">${escapeText(file.name)}<small>${formatBytes(file.size)}</small></span><button type="button" class="tray-remove" data-remove-attachment="${index}" aria-label="Remove ${escapeText(file.name)}">×</button></div>`).join('');
+  tray.innerHTML = composer.files.map((file, index) => `<div class="tray-item">${file.isImage ? `<img src="${file.preview}" alt="" />` : '<span class="tray-file" aria-hidden="true">📄</span>'}<span class="tray-name">${escapeText(file.name)}<small>${formatBytes(file.size)}</small></span><button type="button" class="tray-remove" data-remove-attachment="${index}" aria-label="Remove ${escapeText(file.name)}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>`).join('');
 }
 $('#attachButton').setAttribute('title', ATTACHMENT_RULES);
 $('#attachButton').setAttribute('aria-label', `Attach a photo or PDF. ${ATTACHMENT_RULES}`);

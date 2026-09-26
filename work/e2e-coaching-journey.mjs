@@ -93,7 +93,12 @@ step('trainee accepted the invitation; a bystander with the code could not');
 const roster = await trainer.request('/api/dashboard');
 assert.equal(roster.data.activeClients, 1);
 assert.equal(roster.data.clients[0].id, trainee.id);
-step('trainer now has one client');
+// Missing is not zero (design.md): with nothing assigned there is no rate to
+// report, and the client is not "behind" - they have no plan yet.
+assert.equal(roster.data.completionRate, null, 'no assignments means no completion rate, not 0%');
+assert.equal(roster.data.clients[0].completionRate, null, 'a client with nothing assigned has no rate');
+assert.equal(roster.data.clients[0].overdueCount, 0);
+step('trainer now has one client, with no rate invented for them');
 
 // 5. The trainer builds a workout and assigns it.
 const template = await trainer.request('/api/workout-templates', {
@@ -174,6 +179,8 @@ assert.equal(topSet.note, 'right shoulder tightness');
 step('trainer reviewed the actual sets, loads, exertion and the pain flag');
 
 assert.equal((await trainer.request('/api/assigned-workouts')).data.assignments.find(item => item.id === assignmentId).status, 'COMPLETED');
+const rated = (await trainer.request('/api/dashboard')).data;
+assert.equal(rated.clients[0].completionRate, 100, 'once something is assigned and done, the rate is real');
 
 // 10. The trainer responds with a note, and the trainee gets it.
 const note = await trainer.request('/api/trainer-notes', {

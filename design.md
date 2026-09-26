@@ -167,9 +167,13 @@ leave the grid entirely. [`work/accessibility-check.mjs`](work/accessibility-che
 asserts the count for both roles, because a regression here is invisible on a
 desktop viewport.
 
-Icons are text glyphs, never an icon library — this app has two runtime
-dependencies and that is a feature. The rail and the tab bar must use the **same
-glyph for the same destination**; two sets for one product is its own tell.
+Icons are one hand-drawn SVG sprite at the top of `index.html`, stroked in
+`currentColor` — never an icon library (this app has two runtime dependencies
+and that is a feature), and never a text glyph standing in for an icon. The
+2026-09-26 audit found ☰ ＋ ••• × ‹ › ⌄ ✓ ☀︎ beside the stroked set: two icon
+voices in one product. A new icon is a new `<symbol>`. The rail and the tab bar
+use the **same icon for the same destination**. Glyphs that are typography
+stay: `⚠` on an error or warning, `×` in "3 × 8", an arrow inside a sentence.
 
 ## Motion
 
@@ -186,9 +190,18 @@ glyph for the same destination**; two sets for one product is its own tell.
 ## Microinteractions stance
 
 - Silent success. Toasts only for failures and async work with no visible effect.
+  Where a save changes nothing else on screen (the profile form), the button
+  itself reads "Saved" for a moment — `flashSaved()` in `app.js`.
+- **Undo, not "are you sure?".** A delete that can be taken back happens on
+  screen at once and offers Undo in the toast (`deleteWithUndo()`); the request
+  waits until the toast closes, so Undo needs nothing from the server, and
+  renderers skip anything pending. Pointing at or focusing the toast holds it
+  open. Only an action that truly cannot be undone asks first, and it asks in
+  the styled `#confirmDialog` (`confirmAction()`), never the browser's
+  `confirm()`.
 - Focus rings appear **instantly** — never transitioned.
-- Cards lift 2px on hover behind `@media (hover: hover) and (pointer: fine)`.
-  No hover-only affordances.
+- A row takes a `--color-paper-2` background on hover. Nothing lifts: the
+  lifting cards went with the card grids. No hover-only affordances.
 - Touch targets ≥44px under `@media (pointer: coarse)`; tab items ≥48px; the
   set-complete checkbox ≥32px.
 - The drawer closes on Escape and on a tap outside it, not only on the button
@@ -222,7 +235,7 @@ glyph for the same destination**; two sets for one product is its own tell.
 - The lede: one `h1`, one sentence, one primary action, a hairline under it.
 - Hairline cards on flat paper.
 - `font-variant-numeric: tabular-nums` anywhere a number appears.
-- The same glyph for the same destination in both navigations.
+- The same icon for the same destination in both navigations.
 
 ## What views MAY differ on
 
@@ -246,6 +259,28 @@ server to total a day, by the unit tests, and by the browser to scale a serving.
 
 A quantity nobody has typed is likewise not a quantity of zero: picking a food
 before entering a serving leaves every macro field empty.
+
+A rate over nothing is not 0% either. With no assignments, `/api/dashboard`
+returns `completionRate: null` (trainer-wide and per client) and the UI prints
+`—`. A client with nothing assigned is "No plan yet", not "Check-in due": the
+status comes from `overdueCount`, not from a low rate. Counts that have not
+loaded start empty, never `0`. `work/e2e-coaching-journey.mjs` asserts the null.
+
+## Patterns the 2026-09-26 audit introduced
+
+- **The trainer's Today is two lists.** "Needs you" (overdue workouts, then
+  clients with no plan) and "Coming up", under a lede whose action is Assign
+  workout. The figures and the full roster moved to Clients, where they are
+  the subject. The focus card, the two-up panels and the client table are gone.
+- **Every list is the same row.** `.session-row` inside a `.session-group`:
+  a date or an avatar, what it is, who it is for, a status word, a chevron.
+  Clients and the workout library use it too; card grids are not an app shape.
+- **Settings is a column of sections** on a 46rem measure, one panel per
+  concern. What is stored and where is a `.fact-list` of hairline rows. Nothing
+  inside a section is boxed again — no card in a card.
+- **Plans claim nothing a plan does not do.** No plan gates a feature yet, and
+  the Subscription page says so; the three-tier card grid with a featured
+  middle is gone.
 
 ## Loading states
 
@@ -280,9 +315,11 @@ columns for a chart. The registry is [`app/skeleton.js`](app/skeleton.js).
 
 ## Patterns the sign-in screen introduced
 
-- **The copy says what the product does, once.** Headline, one description, one
-  supporting line, the real figure row. The three-item proof list is gone: with
-  the supporting line it would have been five stacked claims beside a form.
+- **The copy says what the product does, once.** A plain headline, one
+  description of who does what, the real figure row. The three-item proof list
+  went first; the slogan headline ("Built for trainers. Designed for
+  progress.") and a supporting line of three abstract nouns went in the
+  2026-09-26 audit.
 - **The figure row is a row.** It had no layout rule and rendered as a bulleted
   list; `theme.css` now lays it out with hairline separators.
 - **Labels are `for`-linked siblings, not wrappers**, so a password manager and a
@@ -359,8 +396,8 @@ reports everything as passing.
   The topbar search promised "Search clients, workouts…" and filtered only
   clients; its label now says what it does.
 - **Do not show one number twice.** The trainer dashboard showed completion rate
-  in the focus card and again in the figure row. The focus card is about one
-  action and now carries only that.
+  in the focus card and again in the figure row. Both are gone from Today now;
+  the rate is shown once, on Clients.
 - **The auth figure row is real data** — 198 movements, 15 muscle groups, 36
   equipment kinds, counted from
   [`app/exercise-catalog.mjs`](app/exercise-catalog.mjs). If the catalog

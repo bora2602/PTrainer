@@ -186,7 +186,6 @@ $('#loginForm').addEventListener('submit', event => {
       state.csrfToken = result.csrfToken;
       await showApp(result.user);
       form.reset();
-      showToast(`Welcome back, ${result.user.name}`);
     } catch (error) {
       showFormError(form, errorNode, error.message, ERROR_FIELDS[error.code]);
       // The address is safe to keep and tedious to retype; the password is the
@@ -232,7 +231,6 @@ $('#twoFactorForm').addEventListener('submit', event => {
       $('#loginForm').reset();
       await showApp(result.user);
       if (result.recoveryCodeUsed) showToast(`Signed in with a recovery code. ${result.recoveryCodesRemaining} left - make new ones in Settings.`, 8000);
-      else showToast(`Welcome back, ${result.user.name}`);
     } catch (error) {
       // An expired ticket is a dead end unless it sends you back to the password
       // field, so it does, with the reason.
@@ -367,7 +365,6 @@ $$('[data-demo]').forEach(button => button.addEventListener('click', async () =>
     const result = await api('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role }) });
     state.csrfToken = result.csrfToken;
     await showApp(result.user);
-    showToast(role === 'trainer' ? 'Trainer demo opened. Everything here is sample data.' : 'Client demo opened. Everything here is sample data.', 6000);
   } catch (error) { $('#loginError').textContent = error.message; }
   finally { setBusy(button, false); }
 }));
@@ -484,7 +481,7 @@ for (const [buttonId, formId, path, verb] of [['twoFactorDisable', 'twoFactorDis
         form.reset();
         form.hidden = true;
         if (result.recoveryCodes) renderRecoveryCodes(result.recoveryCodes, 'New recovery codes. The previous set no longer works.');
-        else { $('#twoFactorCodes').hidden = true; showToast('Two-factor authentication turned off'); }
+        else $('#twoFactorCodes').hidden = true;
         await loadTwoFactorPanel();
       } catch (error) { showFormError(form, errorNode, error.message, error.code === 'CREDENTIALS_INVALID' ? 'password' : 'code'); }
       finally { setBusy(button, false); }
@@ -502,6 +499,5 @@ $('#demoBannerExit').addEventListener('click', async () => {
     state.csrfToken = session.csrfToken;
     showAuth();
     showAuthPanel('login');
-    showToast('Left the demo');
   }
 });
