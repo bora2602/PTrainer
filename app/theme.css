@@ -1369,6 +1369,268 @@ html[data-theme="dark"] .coach-chip { background: var(--color-paper-3); }
 html[data-theme="dark"] #toast { background: var(--color-paper-3); }
 
 /* ═══════════════════════════════════════════════════════════════
+   17b · Nutrition — the day, then what is in it
+
+   The screen reads top to bottom in the order the questions get asked: which
+   day, how is it adding up, what did I eat, and one button to add more. The
+   form that used to sit permanently beside the list is a dialog now, because
+   it was the loudest thing on a screen whose subject is the food.
+   ═══════════════════════════════════════════════════════════════ */
+
+.day-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+.day-nav-current {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+.day-nav-current input[type="date"] {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-md);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-ink);
+  width: 100%;
+  max-width: 11rem;
+}
+.day-nav-current p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+.day-nav .icon-button { flex: none; }
+.day-nav #nutritionToday { flex: none; }
+
+/* The summary strip. Same calm treatment as the figure row on the landing
+   view, so the two read as one product rather than two dashboards. */
+.nutrition-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-card);
+  background: var(--color-paper);
+  margin-bottom: var(--space-lg);
+  overflow: hidden;
+}
+html[data-theme="dark"] .nutrition-summary { background: var(--color-paper-2); }
+.nutrition-summary[data-state="loading"] { opacity: 0.55; }
+.nutrition-summary:empty { display: none; }
+
+.nutrition-summary-card {
+  flex: 1 1 7rem;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3xs);
+  align-content: start;
+  padding: var(--space-md);
+  border: 0;
+  border-inline-start: 1px solid var(--color-rule);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.nutrition-summary-card:first-child { border-inline-start: 0; }
+.nutrition-summary-card > span {
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--color-muted);
+}
+.nutrition-summary-card strong {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.nutrition-summary-card strong small {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--color-muted);
+  margin-inline-start: 2px;
+}
+.nutrition-summary-card > small {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+  line-height: 1.4;
+}
+/* A nutrient nobody recorded is greyed and shows a dash, so it cannot be read
+   as a measured zero at a glance. */
+.nutrition-summary-card.is-unknown strong { color: var(--color-faint); }
+
+.nutrition-goal {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-paper-4);
+  overflow: hidden;
+  margin-block: var(--space-3xs);
+}
+.nutrition-goal i {
+  display: block;
+  height: 100%;
+  background: var(--color-brand);
+  border-radius: var(--radius-pill);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nutrition-summary-card:hover { transform: none; border-color: var(--color-rule); }
+}
+
+/* Entries read as rows, like every other list in the app. */
+#nutritionList .nutrition-row {
+  border-block-end: 1px solid var(--color-rule);
+  border-radius: 0;
+  background: transparent;
+}
+#nutritionList .nutrition-row:last-child { border-block-end: 0; }
+.nutrition-row em {
+  font-style: normal;
+  color: var(--color-faint);
+}
+.nutrition-meal-type {
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.nutrition-row-actions { display: flex; gap: var(--space-2xs); }
+.nutrition-row-actions .icon-button { width: 34px; height: 34px; padding: 0; }
+.nutrition-row-actions .icon { width: 1rem; height: 1rem; }
+.danger-icon:hover { color: var(--color-critical); border-color: var(--color-critical); }
+
+/* A day that would not load says so, and offers the way back. */
+.empty-state.is-error h2 { color: var(--color-ink); }
+.empty-state.compact { padding: var(--space-xl) var(--space-md); }
+.empty-state.compact .primary-button,
+.empty-state.compact .secondary-button { margin-top: var(--space-sm); }
+
+/* The add-food dialog. One column, in the order the flow asks its questions. */
+.nutrition-dialog-card {
+  width: min(34rem, calc(100vw - 24px));
+  max-height: min(88vh, 52rem);
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-sm);
+  align-content: start;
+}
+.nutrition-dialog-card .macro-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(6.5rem, 100%), 1fr));
+  gap: var(--space-xs);
+}
+.nutrition-dialog-card .nutrition-form-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+  gap: var(--space-xs);
+}
+.nutrition-dialog-card label { display: grid; gap: var(--space-2xs); }
+/* The card scrolls, so the confirm step has to travel with it. Without this
+   the Save button opened below the fold on a phone: the flow's last step was
+   the one thing you could not see. */
+.nutrition-dialog-card .modal-actions {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-block-start: var(--space-2xs);
+  padding-block: var(--space-sm);
+  padding-block-end: max(var(--space-sm), env(safe-area-inset-bottom));
+  background: var(--color-paper);
+  border-block-start: 1px solid var(--color-rule);
+}
+html[data-theme="dark"] .nutrition-dialog-card .modal-actions { background: var(--color-paper-2); }
+
+/* A modal owns the screen. The tab bar behind it is unreachable anyway, and
+   leaving it lit under the scrim just makes the dialog look like it is sitting
+   in a hole. */
+body:has(dialog:modal) .tabbar { display: none; }
+.macro-help,
+.targets-help {
+  font-size: var(--text-xs);
+  color: var(--color-faint);
+  margin: 0;
+  line-height: 1.45;
+}
+.barcode-launch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  text-align: start;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  min-height: 48px;
+}
+.barcode-launch:hover { border-color: var(--color-accent-line); background: var(--color-paper-2); }
+.barcode-launch .icon { width: var(--icon-tab); height: var(--icon-tab); color: var(--color-accent); }
+.barcode-launch span { display: grid; gap: 1px; min-width: 0; }
+.barcode-launch strong { font-size: var(--text-sm); font-weight: 600; }
+.barcode-launch small { font-size: var(--text-xs); color: var(--color-muted); }
+.barcode-launch b { margin-inline-start: auto; color: var(--color-faint); font-weight: 400; }
+
+.selected-food {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-sm);
+  align-items: end;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-accent-line);
+  border-radius: var(--radius-input);
+  background: var(--color-paper-2);
+}
+html[data-theme="dark"] .selected-food { background: var(--color-paper-3); }
+.selected-food > div { display: grid; gap: 1px; min-width: 0; }
+.selected-food span {
+  font-family: var(--font-label);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.selected-food strong { font-size: var(--text-sm); }
+.selected-food small { font-size: var(--text-xs); color: var(--color-muted); }
+.selected-food label { max-width: 9rem; }
+
+.targets-form { display: grid; gap: var(--space-sm); padding: var(--space-md); }
+.targets-form .macro-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(6.5rem, 100%), 1fr));
+  gap: var(--space-xs);
+}
+.targets-form label { display: grid; gap: var(--space-2xs); }
+.targets-form button { justify-self: start; }
+
+@media (max-width: 40rem) {
+  .nutrition-summary-card { flex: 1 1 45%; }
+  .nutrition-summary-card:nth-child(odd) { border-inline-start: 0; }
+  .nutrition-summary-card:nth-child(n+3) { border-block-start: 1px solid var(--color-rule); }
+  .day-nav { flex-wrap: wrap; }
+  .day-nav-current { order: -1; flex-basis: 100%; }
+  .selected-food { grid-template-columns: minmax(0, 1fr) auto; }
+  .selected-food label { grid-column: 1 / -1; max-width: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
    18 · Motion — one entrance, nothing loops, nothing decorative
    ═══════════════════════════════════════════════════════════════ */
 

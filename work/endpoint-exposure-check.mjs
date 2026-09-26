@@ -117,10 +117,28 @@ for (const path of NOT_SERVED) {
   rows.push(`${served ? 'LEAK   ' : 'blocked'} ${String(response.status).padEnd(4)} GET    ${path}`);
   if (served) leaks.push(`GET ${path} served a file that is not public`);
 }
-for (const path of ['/', '/app.js', '/styles.css', '/assets/ptrainer-logo.svg']) {
+// Public files, and the content type each is served under. A browser refuses a
+// module script outright when the type is not a JavaScript one, so serving
+// nutrition-math.mjs as application/octet-stream took the whole nutrition
+// screen down while every status code stayed 200 - a failure no status check
+// would have seen.
+const PUBLIC_EXPECTATIONS = [
+  ['/', 'text/html'],
+  ['/app.js', 'javascript'],
+  ['/workouts.js', 'javascript'],
+  ['/messages.js', 'javascript'],
+  ['/nutrition-math.mjs', 'javascript'],
+  ['/styles.css', 'text/css'],
+  ['/theme.css', 'text/css'],
+  ['/tokens.css', 'text/css'],
+  ['/assets/ptrainer-logo.svg', 'image/svg+xml']
+];
+for (const [path, expectedType] of PUBLIC_EXPECTATIONS) {
   const response = await fetch(base + path);
-  rows.push(`public  ${response.status}  GET    ${path}`);
+  const type = response.headers.get('content-type') || '(none)';
+  rows.push(`public  ${response.status}  GET    ${path.padEnd(24)} ${type}`);
   if (response.status !== 200) leaks.push(`GET ${path} should be served but returned ${response.status}`);
+  else if (!type.includes(expectedType)) leaks.push(`GET ${path} is served as "${type}", which is not ${expectedType}`);
 }
 
 console.log(rows.join('\n'));

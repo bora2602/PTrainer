@@ -18,6 +18,7 @@ import {
   sniffAttachmentType, attachmentFileName, normalizeAttachments, contentDisposition,
   MAX_ATTACHMENT_BYTES
 } from './validation.mjs';
+import { servingMacros, nutritionTotals, targetProgress } from './nutrition-math.mjs';
 
 test('validPassword requires length and four character classes', () => {
   assert.equal(validPassword('LongEnough1!'), true);
@@ -326,4 +327,95 @@ test('normalizeAttachments enforces count, size and type', () => {
 test('contentDisposition cannot be broken out of by a file name', () => {
   assert.equal(contentDisposition('inline', 'form.jpg'), `inline; filename="form.jpg"; filename*=UTF-8''form.jpg`);
   assert.equal(contentDisposition('attachment', 'Plan (v2) é.pdf'), `attachment; filename="Plan (v2) _.pdf"; filename*=UTF-8''Plan%20%28v2%29%20%C3%A9.pdf`);
+});
+
+
+/* ── Nutrition: the arithmetic behind the day's numbers ───────────────────────
+   Each of these pins down a defect that shipped. They are unit tests because
+   the maths is pure; the date round-trip that went with them needs a database
+   and lives in work/nutrition-check.mjs instead. */
+
+test('a food picked before a serving is typed contributes no numbers at all', () => {
+  const per100g = { calories: 250, proteinG: 10, carbsG: 30, fatG: 8 };
+  // The bug: quantity 0 was multiplied through, so the form filled with real
+  // zeros and saving stored "0 kcal" as a measured value.
+  for (const nothing of ['', null, undefined, 0, -5, 'abc']) {
+    assert.deepEqual(servingMacros(per100g, nothing),
+      { calories: null, proteinG: null, carbsG: null, fatG: null },
+      `quantity ${JSON.stringify(nothing)} should scale to nothing, not to zero`);
+  }
+});
+
+test('a serving scales per-100g figures, rounding calories whole and macros to a tenth', () => {
+  const per100g = { calories: 250, proteinG: 10, carbsG: 30, fatG: 8.4 };
+  assert.deepEqual(servingMacros(per100g, 100), { calories: 250, proteinG: 10, carbsG: 30, fatG: 8.4 });
+  assert.deepEqual(servingMacros(per100g, 50),  { calories: 125, proteinG: 5,  carbsG: 15, fatG: 4.2 });
+  assert.deepEqual(servingMacros(per100g, 30),  { calories: 75,  proteinG: 3,  carbsG: 9,  fatG: 2.5 });
+});
+
+test('a nutrient the source does not carry stays unknown at every serving size', () => {
+  const partial = { calories: 200, proteinG: null, carbsG: undefined, fatG: '' };
+  const scaled = servingMacros(partial, 250);
+  assert.equal(scaled.calories, 500);
+  assert.equal(scaled.proteinG, null);
+  assert.equal(scaled.carbsG, null);
+  assert.equal(scaled.fatG, null);
+});
+
+test('an absurd serving is refused rather than scaled into nonsense', () => {
+  assert.equal(servingMacros({ calories: 250 }, 100001).calories, null);
+  assert.equal(servingMacros({ calories: 250 }, 100000).calories, 250000);
+});
+
+test('a day nobody logged calories against totals as unknown, not as zero', () => {
+  // The bug: `sum + Number(value || 0)` made three uncounted meals read as a
+  // confident 0 kcal, which is what a day of fasting looks like.
+  const totals = nutritionTotals([
+    { description: 'porridge', calories: null },
+    { description: 'sandwich', calories: null }
+  ]);
+  assert.equal(totals.calories.total, null);
+  assert.equal(totals.calories.known, 0);
+  assert.equal(totals.calories.missing, 2);
+});
+
+test('a partly logged day totals what is known and says what is missing', () => {
+  const totals = nutritionTotals([
+    { calories: 400, protein_g: 20 },
+    { calories: 250, protein_g: null },
+    { calories: null, protein_g: 12.5 }
+  ]);
+  assert.equal(totals.calories.total, 650);
+  assert.equal(totals.calories.known, 2);
+  assert.equal(totals.calories.missing, 1);
+  assert.equal(totals.protein_g.total, 32.5);
+  assert.equal(totals.protein_g.missing, 1);
+});
+
+test('a genuine zero still counts as a logged zero', () => {
+  const totals = nutritionTotals([{ calories: 0 }, { calories: 0 }]);
+  assert.equal(totals.calories.total, 0);
+  assert.equal(totals.calories.known, 2);
+  assert.equal(totals.calories.missing, 0);
+});
+
+test('an empty day reports nothing rather than zero', () => {
+  const totals = nutritionTotals([]);
+  assert.equal(totals.calories.total, null);
+  assert.equal(totals.calories.entries, 0);
+});
+
+test('nutritionTotals survives rubbish without throwing', () => {
+  const totals = nutritionTotals([{ calories: 'abc' }, null, undefined, { calories: Infinity }]);
+  assert.equal(totals.calories.total, null);
+  assert.equal(nutritionTotals(null).calories.entries, 0);
+});
+
+test('progress against a target is absent, not zero, when either side is unknown', () => {
+  assert.equal(targetProgress(null, 2000), null);
+  assert.equal(targetProgress(500, null), null);
+  assert.equal(targetProgress(500, 0), null);
+  assert.equal(targetProgress(500, 2000), 25);
+  assert.equal(targetProgress(0, 2000), 0);
+  assert.equal(targetProgress(5000, 2000), 100, 'the bar stops at full rather than overflowing');
 });

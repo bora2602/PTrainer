@@ -230,6 +230,36 @@ glyph for the same destination**; two sets for one product is its own tell.
 - Panel composition and grid rhythm.
 - Whether a figure row appears — only if the numbers are real.
 
+## Missing is not zero
+
+The nutrition work added a rule the rest of the app should follow. A value
+nobody recorded renders as an em dash and is marked `is-unknown`; it is never
+printed as `0`. A day whose entries carry no calorie figure shows a dash and
+says how many entries are blank, because "0 kcal" is what a day of fasting
+looks like and the two must not be confusable.
+
+The same rule runs backwards into the arithmetic. Totals count only the entries
+that carry a figure, and a progress bar is *absent* rather than empty when
+either the total or the target is unknown. The maths lives in
+[`app/nutrition-math.mjs`](app/nutrition-math.mjs) - one module, used by the
+server to total a day, by the unit tests, and by the browser to scale a serving.
+
+A quantity nobody has typed is likewise not a quantity of zero: picking a food
+before entering a serving leaves every macro field empty.
+
+## Patterns the nutrition screen introduced
+
+- **Day navigation** (`.day-nav`) - previous, the date itself, next, and Today.
+  Stepping is done on a `YYYY-MM-DD` string so it never crosses a timezone.
+- **A summary strip** (`.nutrition-summary`) - the same calm hairlined row as
+  the landing view's figures, so the two read as one product.
+- **A flow gets a dialog.** Adding food is search or scan, choose, set the
+  serving, confirm. It was a permanently open twenty-field form beside the list,
+  which is the loudest thing on a screen whose subject is the food. Any dialog
+  whose card scrolls puts its actions in a sticky footer, or the confirm step
+  ends up below the fold. A modal also stands the mobile tab bar down.
+- **Rarely-touched settings fold away.** Daily targets sit in a `<details>`.
+
 ## Honesty rules
 
 - **Never invent a metric.** Placeholders render as `—` until the API fills them.

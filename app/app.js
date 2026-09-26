@@ -328,14 +328,118 @@ foodSuggestionList.addEventListener('click',event=>{const option=event.target.cl
 const nutritionFields=form=>{const fields=new FormData(form);return{traineeId:state.user.role==='TRAINER'?selectedClient()?.id:undefined,entryDate:fields.get('entryDate'),entryType:fields.get('entryType'),description:fields.get('description'),calories:fields.get('calories'),proteinG:fields.get('proteinG'),carbsG:fields.get('carbsG'),fatG:fields.get('fatG'),waterMl:fields.get('waterMl'),foodBarcode:fields.get('foodBarcode'),foodName:fields.get('foodName'),foodBrand:fields.get('foodBrand'),foodQuantityG:fields.get('foodQuantityG'),dataSource:fields.get('dataSource')}};
 function nutritionQuery(){const params=new URLSearchParams(),client=selectedClient(),date=$('#nutritionDateFilter').value;if(state.user?.role==='TRAINER'&&client)params.set('traineeId',client.id);if(date)params.set('date',date);return`?${params}`}
 function clearSelectedFood({clearMacros=true,clearName=true}={}){const form=$('#nutritionForm');if(state.autoFilled&&form.elements.description.value===state.autoFilled.description)form.elements.description.value='';state.selectedFood=null;state.autoFilled=null;for(const name of ['foodBarcode','foodBrand','foodQuantityG','dataSource'])form.elements[name].value='';if(clearName)form.elements.foodName.value='';if(clearMacros)for(const name of ['calories','proteinG','carbsG','fatG'])form.elements[name].value='';$('#selectedFood').hidden=true;closeFoodSuggestions();$('#foodSearchStatus').textContent=''}
-function resetNutritionForm(){const form=$('#nutritionForm');form.reset();clearSelectedFood();form.elements.entryDate.value=$('#nutritionDateFilter').value||localDate();form.elements.entryId.value='';$('#nutritionFormTitle').textContent='Add nutrition entry';$('#cancelNutritionEdit').hidden=true;form.querySelector('[type="submit"]').textContent='Save entry'}
-function macroSummary(key,label,unit,entries,target){const total=entries.reduce((sum,item)=>sum+Number(item[key]||0),0),goal=target?.[key],progress=goal?Math.min(100,Math.round(total/Number(goal)*100)):0;return`<article class="nutrition-summary-card"><span>${label}</span><strong>${Math.round(total*10)/10}<small>${unit}</small></strong><div class="nutrition-goal"><i data-w="${progress}"></i></div><small>${goal?`${progress}% of ${Number(goal)} ${unit}`:'No target set'}</small></article>`}
-async function loadNutrition(){try{const result=await api(`/api/nutrition-entries${nutritionQuery()}`),entries=result.entries||[],target=result.target;state.nutritionEntries=entries;$('#nutritionListCaption').textContent=new Date(`${$('#nutritionDateFilter').value}T12:00:00`).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});$('#nutritionSummary').innerHTML=[macroSummary('calories','Calories','kcal',entries,target),macroSummary('protein_g','Protein','g',entries,target),macroSummary('carbs_g','Carbs','g',entries,target),macroSummary('fat_g','Fat','g',entries,target),macroSummary('water_ml','Water','ml',entries,target)].join('');$('#nutritionList').innerHTML=entries.length?entries.map(item=>`<article class="nutrition-row"><div class="nutrition-entry-copy"><span class="nutrition-meal-type">${escapeText(item.entry_type.replaceAll('_',' '))}${item.food_barcode?' · SCANNED FOOD':''}</span><strong>${escapeText(item.description||'Nutrition entry')}</strong><small>${item.food_barcode?`${escapeText(item.food_brand||'Packaged food')} · ${Number(item.food_quantity_g||0)} g/ml · `:''}Added by ${escapeText(item.author_name)}</small></div><span>${item.calories??'—'}<small>kcal</small></span><span>${item.protein_g??'—'}<small>protein g</small></span><span>${item.carbs_g??'—'}<small>carbs g</small></span><span>${item.fat_g??'—'}<small>fat g</small></span><span>${item.water_ml??'—'}<small>water ml</small></span>${item.can_manage?`<div class="nutrition-row-actions"><button class="icon-button" type="button" data-edit-nutrition="${item.id}" aria-label="Edit nutrition entry">✎</button><button class="icon-button danger-icon" type="button" data-delete-nutrition="${item.id}" aria-label="Delete nutrition entry">×</button></div>`:''}</article>`).join(''):'<div class="empty-state compact"><h2>No entries for this day</h2><p>Add a meal, daily summary, or water entry.</p></div>';const targetForm=$('#nutritionTargetForm');for(const [name,key]of [['calories','calories'],['proteinG','protein_g'],['carbsG','carbs_g'],['fatG','fat_g'],['waterMl','water_ml']])targetForm.elements[name].value=target?.[key]??''}catch(error){$('#nutritionError').textContent=error.message}}
+function resetNutritionForm(){const form=$('#nutritionForm');form.reset();clearSelectedFood();form.elements.entryDate.value=$('#nutritionDateFilter').value||localDate();form.elements.entryId.value='';$('#nutritionFormTitle').textContent='Add food';form.querySelector('[type="submit"]').textContent='Save entry'}
+const countLabel=(count,one,many)=>`${count} ${count===1?one:many}`;
+
+// One card per nutrient. The total comes from the server, which counts only
+// the entries that actually carry a figure, so a day nobody logged calories
+// against shows a dash rather than a confident 0 kcal. When some entries are
+// blank the card says so, because "1,200 kcal" from half a logged day is a
+// different claim from "1,200 kcal".
+function macroSummary(key,label,unit,totals,target,progress){
+  const cell=totals?.[key],goal=target?.[key],share=progress?.[key];
+  const known=cell?cell.total:null,missing=cell?cell.missing:0;
+  const value=known==null?'\u2014':`${Math.round(known*10)/10}`;
+  const foot=known==null
+    ?(cell&&cell.entries?`Not logged on ${countLabel(cell.entries,'entry','entries')}`:'Nothing logged')
+    :goal?`${share==null?'\u2014':share+'%'} of ${Number(goal)} ${unit}`
+    :missing?`${missing} ${missing===1?'entry has':'entries have'} no figure`:'No target set';
+  const bar=share==null?'':`<div class="nutrition-goal"><i data-w="${share}"></i></div>`;
+  return `<article class="nutrition-summary-card${known==null?' is-unknown':''}"><span>${label}</span><strong>${value}<small>${known==null?'':unit}</small></strong>${bar}<small>${escapeText(foot)}</small></article>`;
+}
+// Every journal load carries a ticket. Only the newest one is allowed to paint.
+//
+// Without this, changing the day twice in quick succession let the slower of
+// the two responses land last and win, so the list showed one day while the
+// picker and the caption said another - and nothing on screen admitted it.
+let nutritionRequest=0;
+function nutritionDayLabel(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return 'Pick a day';
+  const date=calendarDate(value);
+  return Number.isNaN(date.getTime())?'Pick a day':date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+}
+async function loadNutrition(){
+  const ticket=++nutritionRequest,day=$('#nutritionDateFilter').value;
+  $('#nutritionListCaption').textContent=nutritionDayLabel(day);
+  $('#nutritionError').textContent='';
+  $('#nutritionSummary').dataset.state='loading';
+  try{
+    const result=await api(`/api/nutrition-entries${nutritionQuery()}`);
+    if(ticket!==nutritionRequest)return;                 // a newer day is already loading
+    const entries=result.entries||[];
+    state.nutritionEntries=entries;
+    renderNutrition(entries,result);
+  }catch(error){
+    if(ticket!==nutritionRequest)return;
+    // Clear the day rather than leave the previous one sitting there: stale
+    // totals beside an error message read as this day's food.
+    state.nutritionEntries=[];
+    $('#nutritionSummary').innerHTML='';
+    $('#nutritionListMeta').textContent='';
+    $('#nutritionList').innerHTML=`<div class="empty-state compact is-error"><h2>That day would not load</h2><p>${escapeText(error.message||'The journal could not be reached.')}</p><button class="secondary-button" type="button" id="retryNutrition">Try again</button></div>`;
+    $('#retryNutrition')?.addEventListener('click',()=>loadNutrition());
+  }finally{
+    if(ticket===nutritionRequest)$('#nutritionSummary').dataset.state='';
+  }
+}
+function renderNutrition(entries,result){
+  const {totals,target,progress}=result;
+  $('#nutritionSummary').innerHTML=[['calories','Calories','kcal'],['protein_g','Protein','g'],['carbs_g','Carbs','g'],['fat_g','Fat','g'],['water_ml','Water','ml']]
+    .map(([key,label,unit])=>macroSummary(key,label,unit,totals,target,progress)).join('');
+  $('#nutritionListMeta').textContent=entries.length?countLabel(entries.length,'entry','entries'):'Nothing logged yet';
+  $('#nutritionList').innerHTML=entries.length?entries.map(nutritionRow).join('')
+    :'<div class="empty-state compact"><h2>Nothing logged for this day</h2><p>Add what you ate and it will show up here.</p><button class="primary-button" type="button" data-open-nutrition-entry>Add food</button></div>';
+  const targetForm=$('#nutritionTargetForm');
+  for(const [name,key] of [['calories','calories'],['proteinG','protein_g'],['carbsG','carbs_g'],['fatG','fat_g'],['waterMl','water_ml']])targetForm.elements[name].value=target?.[key]??'';
+}
+// A value the person never recorded prints as a dash, never as 0.
+const nutritionCell=(value,unit)=>`<span>${value==null||value===''?'<em>\u2014</em>':escapeText(String(value))}<small>${unit}</small></span>`;
+function nutritionRow(item){
+  const scanned=Boolean(item.food_barcode);
+  const meal=escapeText(String(item.entry_type||'').replaceAll('_',' ').toLowerCase());
+  const portion=item.food_quantity_g?`${Number(item.food_quantity_g)} g/ml`:'';
+  const source=scanned?escapeText(item.food_brand||'Packaged food'):item.food_name?escapeText(item.food_name):'';
+  return `<article class="nutrition-row">
+    <div class="nutrition-entry-copy"><span class="nutrition-meal-type">${meal}${scanned?' \u00b7 scanned':''}</span><strong>${escapeText(item.description||item.food_name||'Nutrition entry')}</strong><small>${[source,portion,`Added by ${escapeText(item.author_name)}`].filter(Boolean).join(' \u00b7 ')}</small></div>
+    ${nutritionCell(item.calories,'kcal')}${nutritionCell(item.protein_g,'protein g')}${nutritionCell(item.carbs_g,'carbs g')}${nutritionCell(item.fat_g,'fat g')}${nutritionCell(item.water_ml,'water ml')}
+    ${item.can_manage?`<div class="nutrition-row-actions"><button class="icon-button" type="button" data-edit-nutrition="${escapeText(item.id)}" aria-label="Edit this entry"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg></button><button class="icon-button danger-icon" type="button" data-delete-nutrition="${escapeText(item.id)}" aria-label="Delete this entry"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg></button></div>`:''}
+  </article>`;
+}
 $('#nutritionDateFilter').value=localDate();resetNutritionForm();
-$('#nutritionDateFilter').addEventListener('change',async()=>{resetNutritionForm();await loadNutrition()});
-$('#cancelNutritionEdit').addEventListener('click',resetNutritionForm);
-$('#nutritionForm').addEventListener('submit',async event=>{event.preventDefault();snapFoodNameToSelection();const form=event.currentTarget,entryId=form.elements.entryId.value,button=form.querySelector('[type="submit"]');$('#nutritionError').textContent='';setBusy(button,true,'Saving…');try{await api(entryId?`/api/nutrition-entries/${encodeURIComponent(entryId)}`:'/api/nutrition-entries',{method:entryId?'PATCH':'POST',body:JSON.stringify(nutritionFields(form))});resetNutritionForm();showToast(entryId?'Nutrition entry updated':'Nutrition entry saved');await loadNutrition()}catch(error){$('#nutritionError').textContent=error.message}finally{setBusy(button,false)}});
-$('#nutritionList').addEventListener('click',async event=>{const editButton=event.target.closest('[data-edit-nutrition]'),deleteButton=event.target.closest('[data-delete-nutrition]');if(editButton){const entry=state.nutritionEntries.find(item=>item.id===editButton.dataset.editNutrition),form=$('#nutritionForm');if(!entry)return;resetNutritionForm();form.elements.entryId.value=entry.id;form.elements.entryDate.value=String(entry.entry_date).slice(0,10);form.elements.entryType.value=entry.entry_type;form.elements.description.value=entry.description;for(const [name,key]of [['calories','calories'],['proteinG','protein_g'],['carbsG','carbs_g'],['fatG','fat_g'],['waterMl','water_ml'],['foodBarcode','food_barcode'],['foodName','food_name'],['foodBrand','food_brand'],['foodQuantityG','food_quantity_g'],['dataSource','data_source']])form.elements[name].value=entry[key]??'';if(entry.food_name||entry.food_barcode){$('#selectedFood').hidden=false;$('#selectedFoodSource').textContent=entry.food_barcode?'PACKAGED FOOD':'LOOKED-UP FOOD';$('#selectedFoodName').textContent=entry.food_name||'Packaged food';$('#selectedFoodDetails').textContent=[entry.food_brand||'',entry.food_barcode?`barcode ${entry.food_barcode}`:''].filter(Boolean).join(' · ')||'Nutrition per 100 g/ml';}$('#nutritionFormTitle').textContent='Edit nutrition entry';$('#cancelNutritionEdit').hidden=false;form.querySelector('[type="submit"]').textContent='Update entry';form.scrollIntoView({behavior:'smooth',block:'start'})}if(deleteButton){const entry=state.nutritionEntries.find(item=>item.id===deleteButton.dataset.deleteNutrition);if(!entry||!confirm('Delete this nutrition entry? This cannot be undone.'))return;try{await api(`/api/nutrition-entries/${encodeURIComponent(entry.id)}`,{method:'DELETE',body:JSON.stringify({traineeId:state.user.role==='TRAINER'?selectedClient()?.id:undefined})});showToast('Nutrition entry deleted');await loadNutrition()}catch(error){$('#nutritionError').textContent=error.message}}});
+$('#nutritionDateFilter').addEventListener('change',()=>loadNutrition());
+// Arrows step a day at a time; the picker still jumps anywhere. Stepping is
+// done on a plain date string so it never crosses a timezone on the way.
+function shiftJournalDay(days){
+  const field=$('#nutritionDateFilter'),current=/^\d{4}-\d{2}-\d{2}$/.test(field.value)?field.value:localDate();
+  const date=calendarDate(current);
+  date.setDate(date.getDate()+days);
+  field.value=calendarKey(date);
+  loadNutrition();
+}
+$('#nutritionPrevDay').addEventListener('click',()=>shiftJournalDay(-1));
+$('#nutritionNextDay').addEventListener('click',()=>shiftJournalDay(1));
+$('#nutritionToday').addEventListener('click',()=>{$('#nutritionDateFilter').value=localDate();loadNutrition()});
+
+// Adding food is a flow with a beginning and an end, so it gets a dialog
+// instead of a permanently open form competing with the day it writes into.
+const nutritionDialog=$('#nutritionDialog');
+function openNutritionEntry(){
+  resetNutritionForm();
+  if(!nutritionDialog.open)nutritionDialog.showModal();
+  setTimeout(()=>$('#foodNameInput')?.focus(),60);
+}
+$('#openNutritionEntry').addEventListener('click',openNutritionEntry);
+$$('[data-close-nutrition]').forEach(button=>button.addEventListener('click',()=>nutritionDialog.close()));
+$('#nutritionList').addEventListener('click',event=>{if(event.target.closest('[data-open-nutrition-entry]'))openNutritionEntry()});
+// Leaving the dialog must not leave a half-finished entry behind for next time.
+nutritionDialog.addEventListener('close',()=>{resetNutritionForm();closeFoodSuggestions()});
+
+// Disabling the button is not enough on its own: a second press can land in
+// the same tick, and Enter in a text field submits the form without touching
+// the button at all. One double-tap used to store the meal twice.
+let nutritionSaving=false;
+$('#nutritionForm').addEventListener('submit',async event=>{event.preventDefault();if(nutritionSaving)return;nutritionSaving=true;snapFoodNameToSelection();const form=event.currentTarget,entryId=form.elements.entryId.value,button=form.querySelector('[type="submit"]');$('#nutritionError').textContent='';setBusy(button,true,'Saving…');try{await api(entryId?`/api/nutrition-entries/${encodeURIComponent(entryId)}`:'/api/nutrition-entries',{method:entryId?'PATCH':'POST',body:JSON.stringify(nutritionFields(form))});nutritionDialog.close();showToast(entryId?'Entry updated':'Entry saved');await loadNutrition()}catch(error){$('#nutritionError').textContent=error.message}finally{nutritionSaving=false;setBusy(button,false)}});
+$('#nutritionList').addEventListener('click',async event=>{const editButton=event.target.closest('[data-edit-nutrition]'),deleteButton=event.target.closest('[data-delete-nutrition]');if(editButton){const entry=state.nutritionEntries.find(item=>item.id===editButton.dataset.editNutrition),form=$('#nutritionForm');if(!entry)return;resetNutritionForm();form.elements.entryId.value=entry.id;form.elements.entryDate.value=String(entry.entry_date).slice(0,10);/* the API already sends a calendar day */form.elements.entryType.value=entry.entry_type;form.elements.description.value=entry.description;for(const [name,key]of [['calories','calories'],['proteinG','protein_g'],['carbsG','carbs_g'],['fatG','fat_g'],['waterMl','water_ml'],['foodBarcode','food_barcode'],['foodName','food_name'],['foodBrand','food_brand'],['foodQuantityG','food_quantity_g'],['dataSource','data_source']])form.elements[name].value=entry[key]??'';if(entry.food_name||entry.food_barcode){$('#selectedFood').hidden=false;$('#selectedFoodSource').textContent=entry.food_barcode?'PACKAGED FOOD':'LOOKED-UP FOOD';$('#selectedFoodName').textContent=entry.food_name||'Packaged food';$('#selectedFoodDetails').textContent=[entry.food_brand||'',entry.food_barcode?`barcode ${entry.food_barcode}`:''].filter(Boolean).join(' · ')||'Nutrition per 100 g/ml';}$('#nutritionFormTitle').textContent='Edit entry';form.querySelector('[type="submit"]').textContent='Update entry';if(!nutritionDialog.open)nutritionDialog.showModal()}if(deleteButton){const entry=state.nutritionEntries.find(item=>item.id===deleteButton.dataset.deleteNutrition);if(!entry||!confirm('Delete this nutrition entry? This cannot be undone.'))return;try{await api(`/api/nutrition-entries/${encodeURIComponent(entry.id)}`,{method:'DELETE',body:JSON.stringify({traineeId:state.user.role==='TRAINER'?selectedClient()?.id:undefined})});showToast('Nutrition entry deleted');await loadNutrition()}catch(error){$('#nutritionError').textContent=error.message}}});
 $('#nutritionTargetForm').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,fields=new FormData(form),button=form.querySelector('button');$('#nutritionTargetError').textContent='';setBusy(button,true,'Saving…');try{await api('/api/nutrition-target',{method:'PATCH',body:JSON.stringify({traineeId:state.user.role==='TRAINER'?selectedClient()?.id:undefined,calories:fields.get('calories'),proteinG:fields.get('proteinG'),carbsG:fields.get('carbsG'),fatG:fields.get('fatG'),waterMl:fields.get('waterMl')})});showToast('Daily nutrition targets saved');await loadNutrition()}catch(error){$('#nutritionTargetError').textContent=error.message}finally{setBusy(button,false)}});
 
 const barcodeDialog=$('#barcodeDialog'),barcodeVideo=$('#barcodeVideo');let barcodeStream=null,barcodeFrame=null,barcodeDetecting=false;
@@ -344,7 +448,11 @@ function stopBarcodeCamera(){if(barcodeFrame)cancelAnimationFrame(barcodeFrame);
 // lookup wrote, so a trainee who corrected a number against the package label
 // never has that correction overwritten by the next keystroke.
 function macroFieldsUntouched(){const form=$('#nutritionForm'),macroNames=['calories','proteinG','carbsG','fatG'],snapshot=state.autoFilled;return snapshot?macroNames.every(name=>form.elements[name].value===snapshot.macros[name]):macroNames.every(name=>!form.elements[name].value)}
-function applyFoodNutrition(){const product=state.selectedFood;if(!product)return;const form=$('#nutritionForm'),quantity=Number(form.elements.foodQuantityG.value),factor=Number.isFinite(quantity)&&quantity>0?quantity/100:0,nutrients=product.nutritionPer100g;form.elements.calories.value=nutrients.calories==null?'':String(Math.round(nutrients.calories*factor));for(const name of ['proteinG','carbsG','fatG'])form.elements[name].value=nutrients[name]==null?'':String(Math.round(nutrients[name]*factor*10)/10);if(state.autoFilled)state.autoFilled.macros=Object.fromEntries(['calories','proteinG','carbsG','fatG'].map(name=>[name,form.elements[name].value]))}
+function applyFoodNutrition(){const product=state.selectedFood;if(!product)return;const form=$('#nutritionForm');
+  // NutritionMath is published by nutrition-math.mjs, which loads as a module
+  // and therefore after this file. Only ever read it from inside a handler.
+  const scaled=window.NutritionMath.servingMacros(product.nutritionPer100g,form.elements.foodQuantityG.value);
+  for(const name of ['calories','proteinG','carbsG','fatG'])form.elements[name].value=scaled[name]==null?'':String(scaled[name]);if(state.autoFilled)state.autoFilled.macros=Object.fromEntries(['calories','proteinG','carbsG','fatG'].map(name=>[name,form.elements[name].value]))}
 function descriptionUntouched(){const value=$('#nutritionForm').elements.description.value;return !value.trim()||Boolean(state.autoFilled)&&value===state.autoFilled.description}
 function foodDetailLine(product){return [product.brand||'Unknown brand',product.barcode?`barcode ${product.barcode}`:product.servingSize||'nutrition per 100 g/ml',`${product.nutritionPer100g.calories??'—'} kcal per 100 g`].filter(Boolean).join(' · ')}
 function applySelectedFood(product,{replaceInput=true,announce=true}={}){const form=$('#nutritionForm');state.selectedFood=product;form.elements.foodBarcode.value=product.barcode||'';form.elements.foodBrand.value=product.brand;form.elements.dataSource.value=product.source;form.elements.foodQuantityG.value=product.suggestedQuantity;if(replaceInput)form.elements.foodName.value=product.name;if(descriptionUntouched())form.elements.description.value=[product.name,product.brand].filter(Boolean).join(' · ');state.autoFilled={macros:{},description:form.elements.description.value};$('#selectedFoodSource').textContent=product.source==='OPEN_FOOD_FACTS'?'PACKAGED FOOD':'FOOD REFERENCE';$('#selectedFoodName').textContent=product.name;$('#selectedFoodDetails').textContent=foodDetailLine(product);$('#selectedFood').hidden=false;applyFoodNutrition();if(announce)showToast(`${product.name} added to the nutrition form`)}
