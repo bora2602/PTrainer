@@ -1,15 +1,30 @@
 (Done) Add calendar entegration - export to google / apple calendar (done - subscribe link + .ics download in Settings; OAuth sync still out)
-Better backend protection
 (Done) Login experience optimization
-better sets / reps tracking
 (Done) personal trainer and trainee message platform enhancement 
-Web page look optimization
 (Done) Login page description or text change -----> it should say something like The best platform for personal trainers and their clients
 (Done) Client/user message interface change for example add files, pictures and emojis 
-Mobile look improvement
 (Done)add pictures to chat
 (Done) We need to have FAQ part and submit an email section (done)
-
-
-
-layout:
+Mobile look improvement
+better sets / reps tracking
+Web page look optimization
+(Done) For mobile frontend interface one page not scrollable. Make Q&A section small at the bottom not show everything, same with send us a message section (done - phones show 3 questions + "Show all", the form opens from "Write to us", sign-in form starts on the first screen)
+Better backend protection
+CERTIFICATION BY Ptrainer to the personal trainers who has ISSA certification or sth like that
+Logo Design
+(Done) Custom 404 page
+(Done) CTA above the fold (phones: form starts on the first screen; sticky bar covers short phones)
+(Done) Internal links (footer: Questions, Contact, Privacy, Terms; links inside FAQ answers)
+(Done) Thank you page (contact form turns into a thank-you state)
+(Done) breadcrumbs (client page, workout logger)
+case studies (?)
+(Done) Response time promise - set SUPPORT_RESPONSE_TIME in .env; nothing is promised until you do
+(Done) sticky mobile CTA
+(Done) robots.txt - set ALLOW_INDEXING=true when you want search engines in; blocked by default for the pilot
+(Done) unique page titles 
+(Done) meta descriptions 
+(Done) social share image (assets/og-image.png + Open Graph tags)
+(Done) local schema - as SoftwareApplication structured data; LocalBusiness does not fit an app with no premises 
+(Done) PP page - /privacy and /terms open the existing notices (wording still needs legal review)
+Google analytics 
+Team photo
