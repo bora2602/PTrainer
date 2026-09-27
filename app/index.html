@@ -5,7 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#fffcfc" />
-  <title>Ptrainer — Fitness Coaching</title>
+  <title>Ptrainer — Coaching plans and workout logs</title>
+  <meta name="description" content="Trainers build a workout once and assign it to any client. Clients log every set from their phone, plus weight and meals if they choose, and their trainer reviews what came back." />
+  <!-- The origin placeholder in these tags is replaced by server.mjs with
+       APP_ORIGIN: share previews and structured data need absolute URLs. -->
+  <link rel="canonical" href="__APP_ORIGIN__/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Ptrainer" />
+  <meta property="og:url" content="__APP_ORIGIN__/" />
+  <meta property="og:title" content="Ptrainer — Coaching plans and workout logs in one place" />
+  <meta property="og:description" content="Trainers build a workout once and assign it to any client. Clients log every set from their phone, and their trainer reviews what came back." />
+  <meta property="og:image" content="__APP_ORIGIN__/assets/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Ptrainer: coaching plans and workout logs in one place." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <!-- Structured data. SoftwareApplication rather than LocalBusiness: Ptrainer
+       has no premises to put on a map. A data block, not a script, so the CSP's
+       script-src 'self' does not apply to it. No offers: checkout is test mode. -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Ptrainer","url":"__APP_ORIGIN__/","applicationCategory":"SportsApplication","operatingSystem":"Web browser","description":"Trainers build a workout once and assign it to any client. Clients log every set from their phone, plus weight and meals if they choose, and their trainer reviews what came back.","image":"__APP_ORIGIN__/assets/og-image.png"}</script>
   <link rel="icon" href="assets/ptrainer-logo.svg" type="image/svg+xml" />
   <link rel="preload" href="assets/fonts/geist-400-latin.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/fonts/geist-600-latin.woff2" as="font" type="font/woff2" crossorigin />
@@ -139,9 +157,9 @@
       <div class="landing-heading">
         
         <h2 id="faqHeading">Questions, answered</h2>
-        <p>What trainers and clients ask most before they start.</p>
+        <p>What trainers and clients ask most before they start. Something else? <a href="#contact">Send us a message</a>.</p>
       </div>
-      <div class="faq-list">
+      <div class="faq-list" id="faqList">
         <article class="faq-item">
           <h3><button class="faq-question" type="button" id="faqQ1" aria-expanded="false" aria-controls="faqA1"><span>Who is Ptrainer for?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
           <div class="faq-answer" id="faqA1" role="region" aria-labelledby="faqQ1"><div><p>Personal trainers who write programs for their clients, and the clients following them. A trainer builds reusable workout templates, assigns them, and reviews what came back. A client logs sets, weight, and meals from their phone.</p></div></div>
@@ -156,7 +174,7 @@
         </article>
         <article class="faq-item">
           <h3><button class="faq-question" type="button" id="faqQ4" aria-expanded="false" aria-controls="faqA4"><span>Who can see my progress and nutrition entries?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
-          <div class="faq-answer" id="faqA4" role="region" aria-labelledby="faqQ4"><div><p>You, and only the coach you have actively connected to — and only for the categories you switch on. Measurements and the meal journal are private by default; you grant them in Settings and can withdraw them at any time. Coaching notes a trainer writes stay private to that trainer unless they choose to share one.</p></div></div>
+          <div class="faq-answer" id="faqA4" role="region" aria-labelledby="faqQ4"><div><p>You, and only the coach you have actively connected to — and only for the categories you switch on. Measurements and the meal journal are private by default; you grant them in Settings and can withdraw them at any time. The <a href="/privacy" data-open-privacy>privacy notice</a> has the detail. Coaching notes a trainer writes stay private to that trainer unless they choose to share one.</p></div></div>
         </article>
         <article class="faq-item">
           <h3><button class="faq-question" type="button" id="faqQ5" aria-expanded="false" aria-controls="faqA5"><span>Is Ptrainer a medical or health service?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
@@ -164,13 +182,14 @@
         </article>
         <article class="faq-item">
           <h3><button class="faq-question" type="button" id="faqQ6" aria-expanded="false" aria-controls="faqA6"><span>Can I get my data out, or delete it?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
-          <div class="faq-answer" id="faqA6" role="region" aria-labelledby="faqQ6"><div><p>Both, from Settings. Export downloads a machine-readable copy of your account data and your recorded consent. Deleting your account ends access, withdraws that consent, and removes your profile, measurements, meal journal, logs and messages.</p></div></div>
+          <div class="faq-answer" id="faqA6" role="region" aria-labelledby="faqQ6"><div><p>Both, from Settings. Export downloads a machine-readable copy of your account data and your recorded consent, as the <a href="/privacy" data-open-privacy>privacy notice</a> describes. Deleting your account ends access, withdraws that consent, and removes your profile, measurements, meal journal, logs and messages.</p></div></div>
         </article>
         <article class="faq-item">
           <h3><button class="faq-question" type="button" id="faqQ7" aria-expanded="false" aria-controls="faqA7"><span>What does it cost?</span><i class="faq-indicator" aria-hidden="true"></i></button></h3>
           <div class="faq-answer" id="faqA7" role="region" aria-labelledby="faqQ7"><div><p>Creating an account and evaluating the core coaching tools is free. Paid plans are listed under Subscription once you are signed in. Ptrainer is currently a controlled pilot, so checkout runs in test mode and no real payment is taken.</p></div></div>
         </article>
       </div>
+      <button class="secondary-button faq-more" id="faqMore" type="button" aria-expanded="false" aria-controls="faqList">Show all questions</button>
     </section>
 
     <section class="landing-section" id="contact" aria-labelledby="contactHeading">
@@ -178,6 +197,7 @@
         
         <h2 id="contactHeading">Send us a message</h2>
         <p>Questions about coaching with Ptrainer, access requests, or anything that looks broken.</p>
+        <p class="contact-promise" id="contactPromise" hidden></p>
       </div>
       <form id="contactForm" class="contact-form" novalidate>
         <div class="contact-pair">
@@ -191,15 +211,24 @@
              learns nothing from the response. -->
         <div class="contact-trap" aria-hidden="true"><label for="contactCompany">Company</label><input id="contactCompany" name="company" type="text" tabindex="-1" autocomplete="off" /></div>
         <p class="form-error" id="contactError" role="alert"></p>
-        <p class="contact-success" id="contactSuccess" role="status" hidden></p>
         <div class="contact-actions">
           <button class="primary-button" id="contactSubmit" type="submit">Send message</button>
           <small>We use your address to reply, nothing else.</small>
         </div>
       </form>
+      <button class="secondary-button contact-open" id="contactOpen" type="button" aria-expanded="false" aria-controls="contactForm">Write to us</button>
+      <!-- The thank-you page, as a state of this section: the form gives way to
+           what happens next, and nothing is promised that the operator did not
+           configure (SUPPORT_RESPONSE_TIME). -->
+      <div class="contact-thanks" id="contactThanks" role="status" tabindex="-1" hidden><h3>Message sent</h3><p id="contactThanksText"></p><button class="secondary-button" id="contactAnother" type="button">Send another message</button></div>
     </section>
 
-    <div class="auth-legal">Ptrainer is a coaching tool, not medical advice. <button type="button" data-open-privacy>Privacy</button><span>·</span><button type="button" data-open-terms>Terms</button></div>
+    <!-- Real links, so the notices and sections are reachable without script
+         and discoverable by a crawler; the script opens them in place. -->
+    <footer class="auth-legal"><span>Ptrainer is a coaching tool, not medical advice.</span><nav class="auth-links" aria-label="Site"><a href="#faq">Questions</a><a href="#contact">Contact</a><a href="/privacy" data-open-privacy>Privacy</a><a href="/terms" data-open-terms>Terms</a></nav></footer>
+    <!-- Phones only: once the sign-in button has scrolled away, the two ways in
+         stay within thumb reach. Hidden while typing, and while it is on screen. -->
+    <div class="auth-sticky" id="authSticky" hidden><button class="secondary-button" type="button" data-sticky-panel="login">Sign in</button><button class="primary-button" type="button" data-sticky-panel="register">Create account</button></div>
   </section>
 
   <div class="app-shell" id="appShell" hidden>
@@ -294,7 +323,7 @@
         </div>
         <div id="workoutSessionView" hidden>
           <div class="session-bar">
-            <button class="back-link" type="button" id="leaveSession"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-prev"/></svg>Workouts</button>
+            <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><button type="button" id="leaveSession">Workouts</button></li><li aria-current="page" id="sessionCrumb">Workout</li></ol></nav>
             <div class="session-clock"><span class="sr-only">Time training</span><strong id="sessionTimer" role="timer">00:00</strong><button class="primary-button" type="button" id="sessionStartButton" hidden>Start</button></div>
           </div>
           <div class="session-title"><h1 id="sessionName">Workout</h1><p id="sessionMeta"></p></div>
@@ -332,7 +361,7 @@
         <section class="panel pending-invitations"><div class="panel-header"><div><h2>Outstanding invitations</h2><p>Withdraw one if you sent it to the wrong address</p></div></div><div id="invitationList" class="note-list"></div></section>
       </section>
       <section class="page trainer-only" id="client-view">
-        <button class="back-link" type="button" data-go="clients"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-prev"/></svg>All clients</button>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><ol><li><button type="button" data-go="clients">Clients</button></li><li aria-current="page" id="clientCrumb">Client</li></ol></nav>
         <div class="client-hero">
           <div class="client-avatar" id="clientPageAvatar" aria-hidden="true">—</div>
           <div class="client-hero-text"><h1 id="clientPageName">Client</h1><p id="clientPageMeta"></p></div>

@@ -313,6 +313,24 @@ columns for a chart. The registry is [`app/skeleton.js`](app/skeleton.js).
 - **Missing is still not zero.** A mask sits over the `—` placeholders; if a load
   fails, the `—` is what remains, never a 0.
 
+## Patterns the public page added (2026-09-26)
+
+- **Promise only what is configured.** The reply time under "Send us a message"
+  comes from `SUPPORT_RESPONSE_TIME`; unset, the page promises nothing.
+- **A sent form becomes a thank-you state**, not a toast: what happens next,
+  to which address, and a way to send another.
+- **Phones get a sticky way in** (`.auth-sticky`) only while no sign-in button
+  is on screen, and never while typing or under a dialog.
+- **On a phone the page folds**: three questions and "Show all", and the
+  contact form behind "Write to us". Desktop shows everything.
+- **Breadcrumbs where a page sits inside another** — a client inside Clients,
+  a workout being logged inside Workouts. Not on top-level views.
+- **Links are real links.** The notices live at `/privacy` and `/terms` (the
+  same template as the dialog, never a second copy), and the footer names the
+  page's own sections.
+- **A dead link gets a page**: `404.html`, served with status 404 to browsers
+  only; everything else still gets the JSON error shape.
+
 ## Patterns the sign-in screen introduced
 
 - **The copy says what the product does, once.** A plain headline, one

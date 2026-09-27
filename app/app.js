@@ -57,11 +57,15 @@ function confirmAction({title,body,accept,danger=false}){const dialog=$('#confir
 function scrollMotion(){return matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}
 function flashSaved(button){if(!button)return;const label=button.dataset.label||button.textContent;button.textContent='Saved';button.dataset.state='success';clearTimeout(button.savedTimer);button.savedTimer=setTimeout(()=>{button.textContent=label;delete button.dataset.state},1800)}
 function setBusy(button,busy,label='Working…'){if(!button)return;button.disabled=busy;if(busy){button.dataset.label=button.textContent;button.textContent=label}else button.textContent=button.dataset.label||button.textContent}
+// Each view names the tab, so history and a row of open tabs say where you
+// were. Generic on purpose: a client's name would sit in the browser history.
+const VIEW_TITLES={dashboard:'Today',workouts:'Workouts',builder:'Workouts',calendar:'Calendar',clients:'Clients',client:'Client',progress:'Progress',nutrition:'Nutrition',messages:'Messages',billing:'Subscription',settings:'Settings'};
+const SIGNED_OUT_TITLE=document.title;
 function switchView(name){
 // A trainer's Workouts is the library they build and assign from; reviewing a
 // client's sessions happens on that client's own page.
 if(name==='workouts'&&state.user?.role==='TRAINER')name='builder';
-const navName=name==='client'?'clients':name;
+const navName=name==='client'?'clients':name;document.title=`${VIEW_TITLES[name]||'Ptrainer'} · Ptrainer`;
 views.forEach(view=>view.classList.toggle('active-view',view.id===`${name}-view`));navItems.forEach(item=>item.classList.toggle('active',item.dataset.view===navName));sidebar.classList.remove('open');window.scrollTo({top:0,behavior:scrollMotion()});if(name==='clients')loadInvitations();if(name==='client'){loadClientPage();loadNotes()}if(name==='builder'&&state.user?.role==='TRAINER'){loadTemplates();loadOwnExercises()}if(name==='workouts')loadAssignments();if(name==='calendar')loadCalendar();if(name==='progress')loadProgress();if(name==='nutrition')loadNutrition();if(name==='messages'){loadMessages();restoreDraft()}if(name==='billing')loadSubscription();if(name==='settings')loadSettings()}
 async function api(path,options={}){const response=await fetch(path,{credentials:'same-origin',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'?{'X-CSRF-Token':state.csrfToken}:{}),...options.headers}});const data=await response.json().catch(()=>({error:{message:'Unexpected server response.'}}));if(!response.ok){const error=new Error(data.error?.message||'Request failed.');error.code=data.error?.code;error.status=response.status;if(response.status===401&&state.user&&path!=='/api/auth/2fa')await sessionExpired();throw error}return data}
 // A session that has expired or been signed out elsewhere. Every view's data
@@ -86,7 +90,7 @@ function initials(name){return name.split(/\s+/).slice(0,2).map(part=>part[0]).j
 // calendar does) so it never shows a day early west of Greenwich.
 function formatDate(value){if(!value)return 'Unscheduled';const date=/^\d{4}-\d{2}-\d{2}$/.test(String(value))?calendarDate(value):new Date(value);return Number.isNaN(date.getTime())?'Unscheduled':date.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
 
-function showAuth(){resetSkeletons();state.user=null;$('#appShell').hidden=true;finishBoot();$('#authScreen').hidden=false;document.body.classList.remove('role-trainer','role-trainee');renderDemoBanner();
+function showAuth(){document.title=SIGNED_OUT_TITLE;resetSkeletons();state.user=null;$('#appShell').hidden=true;finishBoot();$('#authScreen').hidden=false;document.body.classList.remove('role-trainer','role-trainee');renderDemoBanner();
   // Always land on sign-in. Without this the screen kept whichever panel was
   // open before - so somebody who had just created an account and signed out
   // was shown the signup form again, and worse, an expiry message written to
@@ -580,7 +584,16 @@ const deleteDialog=$('#deleteAccountDialog');$('#openDeleteAccount').addEventLis
 
 const legalDialog=$('#legalDialog'),legalCopy={terms:{title:'Pilot terms',content:'Ptrainer is a fitness coaching and tracking tool, not a medical diagnosis or emergency service. Users should stop exercise and seek qualified care when symptoms, injury, or pain require it. Trainers remain responsible for their professional advice and clients remain responsible for choosing whether to follow it.'}};
 async function openLegal(kind){const content=$('#legalContent');legalDialog.showModal();if(kind==='privacy'){$('#legalTitle').textContent='Privacy Notice';content.innerHTML=$('#privacyPolicyTemplate').innerHTML;try{const privacy=await api('/api/privacy');content.querySelectorAll('[data-privacy-organization]').forEach(node=>node.textContent=privacy.organization);content.querySelectorAll('[data-privacy-email]').forEach(node=>{node.textContent=privacy.contactEmail;node.href=`mailto:${privacy.contactEmail}`});content.querySelectorAll('[data-storage-region]').forEach(node=>node.textContent=privacy.storageRegion);content.querySelectorAll('[data-privacy-version]').forEach(node=>node.textContent=privacy.noticeVersion)}catch{showToast('Privacy configuration could not be loaded')}}else{const copy=legalCopy[kind];$('#legalTitle').textContent=copy.title;content.innerHTML=`<p>${escapeText(copy.content)}</p><p><strong>Last updated:</strong> August 20, 2026</p>`}}
-$$('[data-open-privacy]').forEach(button=>button.addEventListener('click',()=>openLegal('privacy')));$$('[data-open-terms]').forEach(button=>button.addEventListener('click',()=>openLegal('terms')));$('[data-close-legal]').addEventListener('click',()=>legalDialog.close());
+$$('[data-open-privacy]').forEach(button=>button.addEventListener('click',event=>{event.preventDefault();openLegal('privacy')}));$$('[data-open-terms]').forEach(button=>button.addEventListener('click',event=>{event.preventDefault();openLegal('terms')}));$('[data-close-legal]').addEventListener('click',()=>legalDialog.close());
+// The notices have addresses of their own - /privacy and /terms - so they can
+// be linked to from an email, a footer or a search result. The server answers
+// both with this page, and it opens the notice named. Same words as the
+// dialog, from the same template: there is one privacy notice, not two.
+const LEGAL_PATHS={'/privacy':'privacy','/terms':'terms'};
+function markLegal(kind){try{history.replaceState(history.state,'',kind?`/${kind}`:'/')}catch{}}
+$$('[data-open-privacy]').forEach(button=>button.addEventListener('click',()=>markLegal('privacy')));$$('[data-open-terms]').forEach(button=>button.addEventListener('click',()=>markLegal('terms')));
+legalDialog.addEventListener('close',()=>{if(LEGAL_PATHS[location.pathname])markLegal(null)});
+if(LEGAL_PATHS[location.pathname])openLegal(LEGAL_PATHS[location.pathname]);
 
 function escapeText(value){const node=document.createElement('span');node.textContent=String(value);return node.innerHTML}
 
@@ -735,13 +748,41 @@ $$('.faq-item').forEach(item=>{
   });
 });
 
+// On a phone the signed-out page used to end in all seven questions and an
+// open six-field form, one long scroll under the sign-in card. Both fold
+// there: the first three questions show, and the form opens on request. The
+// folding is CSS under 720px, so a desktop sees everything as before.
+const FAQ_SHOWN=3,faqItems=$$('.faq-list .faq-item'),faqMore=$('#faqMore');
+faqItems.forEach((item,index)=>item.classList.toggle('is-extra',index>=FAQ_SHOWN));
+if(faqMore){
+  faqMore.textContent=`Show all ${faqItems.length} questions`;
+  faqMore.hidden=faqItems.length<=FAQ_SHOWN;
+  faqMore.addEventListener('click',()=>{$('#faqList').classList.add('is-expanded');faqMore.setAttribute('aria-expanded','true');faqItems[FAQ_SHOWN]?.querySelector('.faq-question')?.focus()});
+}
+$('#contactOpen')?.addEventListener('click',event=>{$('#contactForm').classList.add('is-open');event.currentTarget.setAttribute('aria-expanded','true');$('#contactName')?.focus()});
+// The sticky way in (phones; CSS hides it elsewhere). It shows while no
+// sign-in or sign-up button is on screen, so on a short phone it is also the
+// call to action above the fold, and it steps aside once the form's own button
+// is visible - two copies of one button on one screen is noise.
+const authSticky=$('#authSticky');
+if(authSticky&&'IntersectionObserver' in window){
+  const onScreen=new Set();
+  const observer=new IntersectionObserver(entries=>{for(const entry of entries)entry.isIntersecting?onScreen.add(entry.target):onScreen.delete(entry.target);authSticky.hidden=[...onScreen].some(button=>button.offsetParent!==null)});
+  $$('.auth-card .auth-submit').forEach(button=>observer.observe(button));
+  authSticky.addEventListener('click',event=>{const panel=event.target.closest('[data-sticky-panel]')?.dataset.stickyPanel;if(!panel)return;showAuthPanel(panel);$('.auth-card').scrollIntoView({behavior:scrollMotion(),block:'start'});setTimeout(()=>$(`${AUTH_PANELS[panel]} input:not([type=hidden])`)?.focus({preventScroll:true}),300)});
+}
+
 // ── Contact form ─────────────────────────────────────────────────────────────
 // Validation runs here for the immediate message and again on the server, which
 // is the copy that decides. The form is marked novalidate so these messages
 // appear in the page's own voice rather than the browser's bubble.
 const contactForm=$('#contactForm');
 if(contactForm){
-  const contactError=$('#contactError'),contactSuccess=$('#contactSuccess'),contactButton=$('#contactSubmit');
+  const contactError=$('#contactError'),contactButton=$('#contactSubmit'),contactThanks=$('#contactThanks');
+  // A reply time is shown only when the operator has set one.
+  let responseTime=null;
+  api('/api/privacy').then(config=>{responseTime=config.supportResponseTime||null;if(responseTime){$('#contactPromise').textContent=`We reply within ${responseTime}.`;$('#contactPromise').hidden=false}}).catch(()=>{});
+  $('#contactAnother').addEventListener('click',()=>{contactThanks.hidden=true;contactForm.hidden=false;$('#contactName').focus()});
   // Deliberately permissive: the address is checked properly by delivery, and a
   // clever pattern here only ever rejects somebody's real address.
   const looksLikeEmail=value=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
@@ -768,15 +809,14 @@ if(contactForm){
     // slow send cannot post the message twice.
     if(contactButton.disabled)return;
     contactError.textContent='';
-    contactSuccess.hidden=true;
     const values=readContact();
     if(!values)return;
     setBusy(contactButton,true,'Sending…');
     try{
       await api('/api/contact',{method:'POST',body:JSON.stringify({...values,company:$('#contactCompany').value,elapsedMs:Date.now()-loadedAt})});
       contactForm.reset();
-      contactSuccess.textContent='Thanks — your message is on its way. We reply to the address you gave us.';
-      contactSuccess.hidden=false;
+      $('#contactThanksText').textContent=`Thanks, ${values.name.split(/\s+/)[0]}. We will reply to ${values.email}${responseTime?` within ${responseTime}`:''}.`;
+      contactForm.hidden=true;contactThanks.hidden=false;contactThanks.focus();
     }catch(error){
       contactError.textContent=error.message;
     }finally{

@@ -131,6 +131,28 @@ for (const path of NOT_SERVED) {
   rows.push(`${served ? 'LEAK   ' : 'blocked'} ${String(response.status).padEnd(4)} GET    ${path}`);
   if (served) leaks.push(`GET ${path} served a file that is not public`);
 }
+// A browser following a dead link gets the not-found page - still a 404, and
+// still nothing of the file it asked for. Asked as a browser, the same
+// forbidden paths must behave exactly as they do for curl.
+const browser = { Accept: 'text/html,application/xhtml+xml' };
+for (const path of ['/no-such-page', '/server.mjs', '/404.html', '/migrations/001_initial_schema.sql']) {
+  const response = await fetch(base + path, { headers: browser });
+  const body = await response.text(), type = response.headers.get('content-type') || '';
+  const ok = response.status === 404 && type.includes('text/html') && body.includes('This page does not exist') && !/CREATE TABLE|import |createServer/.test(body);
+  rows.push(`${ok ? 'blocked' : 'LEAK   '} ${String(response.status).padEnd(4)} GET    ${path} (as a browser)`);
+  if (!ok) leaks.push(`GET ${path} as a browser should be the 404 page with status 404`);
+}
+// The share tags carry an absolute address, filled in by the server: a page
+// that still says __APP_ORIGIN__ would give every share preview a dead image.
+const home = await (await fetch(base + '/')).text();
+if (home.includes('__APP_ORIGIN__')) leaks.push('index.html was served with its origin placeholder unfilled');
+if (!/<meta property="og:image" content="https?:\/\/[^"]+\/assets\/og-image\.png"/.test(home)) leaks.push('og:image is not an absolute URL');
+// Crawlers stay out unless ALLOW_INDEXING is set; the API never opens up.
+const robots = await (await fetch(base + '/robots.txt')).text();
+if (process.env.ALLOW_INDEXING !== 'true' && !/Disallow: \/\s*$/m.test(robots)) leaks.push('robots.txt no longer turns crawlers away by default');
+if (!/Disallow: \/(api\/)?\s*$/m.test(robots)) leaks.push('robots.txt lets crawlers into the API');
+const api404 = await fetch(base + '/no-such-page');
+if (api404.status !== 404 || !(await api404.json().catch(() => null))?.error?.code) leaks.push('a non-browser 404 lost its JSON error shape');
 // Public files, and the content type each is served under. A browser refuses a
 // module script outright when the type is not a JavaScript one, so serving
 // nutrition-math.mjs as application/octet-stream took the whole nutrition
@@ -146,6 +168,10 @@ const PUBLIC_EXPECTATIONS = [
   ['/styles.css', 'text/css'],
   ['/theme.css', 'text/css'],
   ['/tokens.css', 'text/css'],
+  ['/404.css', 'text/css'],
+  ['/privacy', 'text/html'],
+  ['/terms', 'text/html'],
+  ['/assets/og-image.png', 'image/png'],
   ['/assets/ptrainer-logo.svg', 'image/svg+xml']
 ];
 for (const [path, expectedType] of PUBLIC_EXPECTATIONS) {

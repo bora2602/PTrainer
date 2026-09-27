@@ -291,6 +291,15 @@ console.log('\n4. The demo accounts open without credentials and stay fenced in'
     assert.ok(dashboard.data.clients.every(client => client.assignedCount > 0), 'every sample client has a program');
   });
 
+  // Sample logs must count what a real log counts - exercises completed, not
+  // sets - or the client page reads "13 of 4 exercises done".
+  const sampleWork = await visitor.request(`/api/assigned-workouts?traineeId=${encodeURIComponent(dashboard.data.clients[0].id)}`);
+  check('sample workout logs count exercises, as real ones do', () => {
+    const logged = sampleWork.data.assignments.filter(item => item.latestLog);
+    assert.ok(logged.length > 0, 'the sample client has logged workouts');
+    for (const item of logged) assert.ok(item.latestLog.completedCount <= item.templateSnapshot.exercises.length, `${item.latestLog.completedCount} of ${item.templateSnapshot.exercises.length} exercises`);
+  });
+
   const invite = await visitor.request('/api/invitations', { method: 'POST', body: JSON.stringify({ email: 'real.person@example.com' }) });
   check('a demo trainer cannot email a stranger an invitation', () => {
     assert.equal(invite.status, 403);

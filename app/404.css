@@ -1,0 +1,63 @@
+/* Hallmark · design-system: design.md · Coral, Day drop · the not-found page
+ * One sentence of what happened, one of reassurance, one way back. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { overflow-x: clip; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font: var(--text-base)/var(--lh-body) var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.nf {
+  width: min(100% - 2 * var(--space-md), 34rem);
+  margin: 0 auto;
+  padding-block: clamp(var(--space-xl), 12vh, var(--space-4xl)) var(--space-2xl);
+}
+.nf-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-ink);
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-lg);
+  letter-spacing: var(--tracking-tight);
+  margin-bottom: var(--space-2xl);
+}
+.nf-code {
+  margin: 0 0 var(--space-xs);
+  font-family: var(--font-label);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.nf h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--lh-tight);
+  overflow-wrap: anywhere;
+}
+.nf-lede { margin: var(--space-sm) 0 var(--space-lg); color: var(--color-ink-2); max-width: 46ch; }
+.nf-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--dur-micro) var(--ease-out);
+}
+.nf-action:hover { background: var(--color-accent-hi); }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: var(--radius-chip); }

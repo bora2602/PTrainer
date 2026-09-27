@@ -73,6 +73,17 @@ const PRIVACY_NOTICE_VERSION = '2026-08-21';
 const PRIVACY_ORGANIZATION = String(process.env.PRIVACY_ORGANIZATION || 'Ptrainer controlled pilot');
 const PRIVACY_CONTACT_EMAIL = String(process.env.PRIVACY_CONTACT_EMAIL || 'privacy@ptrainer.local');
 const DATA_STORAGE_REGION = String(process.env.DATA_STORAGE_REGION || 'Local development device');
+// A reply-time promise is only shown when the operator makes one. Free text
+// ("two business days"), trimmed and capped; unset means the page promises
+// nothing rather than a number somebody invented.
+const SUPPORT_RESPONSE_TIME = String(process.env.SUPPORT_RESPONSE_TIME || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 60);
+// Search engines stay out of the pilot unless the operator lets them in. On,
+// the signed-out page may be indexed; the API and the device preview never.
+const ALLOW_INDEXING = process.env.ALLOW_INDEXING === 'true';
+// The public address written into the share tags in index.html. Operator
+// configuration, but it lands inside HTML attributes, so markup characters go.
+const SHARE_ORIGIN = APP_ORIGIN.replace(/\/+$/, '').replace(/[&"'<>\s]/g, '');
+const INDEXABLE_ROBOTS = 'User-agent: *\nDisallow: /api/\nDisallow: /preview\nAllow: /\n';
 // Where the public contact form delivers. It falls back to the privacy contact
 // so a deployment that has configured one address is never silently dropping
 // messages into nowhere; production already refuses to start without that.
@@ -125,20 +136,20 @@ const DEMO_LIMIT = IS_PRODUCTION ? 30 : 20000;
 // is a million guesses wide, so this is what keeps it from being brute-forced
 // inside the window where it is valid.
 const TWO_FACTOR_LIMIT = IS_PRODUCTION ? 8 : 2000;
-const types = { '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.woff2':'font/woff2' };
+const types = { '.png':'image/png', '.txt':'text/plain; charset=utf-8', '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.woff2':'font/woff2' };
 // The only files the web server hands out. The app folder also holds the server
 // source, migrations, package files, node_modules and - when running without
 // Docker - the PGlite data directory, whose files are the database itself:
 // users, password hashes and live session ids. Serving "whatever is on disk"
 // published all of that to anyone who could reach the port, so the public set
 // is named here and everything else answers 404.
-const PUBLIC_FILES = new Set(['index.html','app.js','workouts.js','auth.js','skeleton.js','messages.js','styles.css','tokens.css','theme.css','fonts.css','nutrition-math.mjs','message-thread.mjs','robots.txt']);
+const PUBLIC_FILES = new Set(['index.html','404.css','app.js','workouts.js','auth.js','skeleton.js','messages.js','styles.css','tokens.css','theme.css','fonts.css','nutrition-math.mjs','message-thread.mjs','robots.txt']);
 const PUBLIC_DIRECTORIES = ['assets/'];
 // The device preview frames the app at phone sizes. It is a development aid, so
 // production neither serves it nor relaxes frame-ancestors for it.
 const PREVIEW_FILES = new Set(['preview.html','preview.js','preview.css']);
 function publicFile(pathname){
-  const requested=pathname==='/'?'index.html':pathname==='/preview'?'preview.html':pathname.slice(1);
+  const requested=['/','/privacy','/terms'].includes(pathname)?'index.html':pathname==='/preview'?'preview.html':pathname.slice(1);
   let decoded;try{decoded=decodeURIComponent(requested)}catch{return null}
   if(decoded.includes('\\')||decoded.includes('\u0000'))return null;
   const clean=posix.normalize(decoded);
@@ -830,7 +841,7 @@ async function authApi(req,res,url,session){
 async function api(req,res,url){
   let session=await getSession(req,res);
   if(req.method==='GET'&&url.pathname==='/api/session'){const user=await sessionUser(session);return json(res,200,{authenticated:Boolean(user),user:user?publicUser(user):null,csrfToken:session.csrf,demoMode:!IS_PRODUCTION,twoFactorEnabled:user?await twoFactorEnabled(user.id):false})}
-  if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION});
+  if(req.method==='GET'&&url.pathname==='/api/privacy')return json(res,200,{noticeVersion:PRIVACY_NOTICE_VERSION,effectiveDate:'2026-08-21',organization:PRIVACY_ORGANIZATION,contactEmail:PRIVACY_CONTACT_EMAIL,storageRegion:DATA_STORAGE_REGION,pilot:!IS_PRODUCTION,supportResponseTime:SUPPORT_RESPONSE_TIME||null});
   // The calendar feed is reachable without a session, and has to be: Google
   // Calendar and Apple Calendar poll a URL: they cannot send a cookie, and they
   // cannot send a CSRF token either. So the URL carries its own credential, and
@@ -1659,7 +1670,12 @@ async function api(req,res,url){
   return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});
 }
 
-async function serveStatic(req,res,url){const safe=publicFile(url.pathname);if(!safe)return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});const path=join(ROOT,safe);if(!path.startsWith(ROOT))return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl,frameable:safe==='index.html'});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}})}}
+// A person who follows a dead link gets a page that says so and a way home.
+// Anything that is not a browser navigation - fetch, curl, a scanner - keeps
+// the JSON error shape. 404.html is read here rather than listed in
+// PUBLIC_FILES, so it is only ever served with a 404 status.
+async function notFound(req,res){const page=['GET','HEAD'].includes(req.method)&&/\btext\/html\b/.test(String(req.headers.accept||''));if(!page)return json(res,404,{error:{code:'NOT_FOUND',message:'Page not found.'}});const body=await readFile(join(ROOT,'404.html'));securityHeaders(res,{cacheControl:'no-store'});res.statusCode=404;res.setHeader('Content-Type',types['.html']);res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}
+async function serveStatic(req,res,url){const safe=publicFile(url.pathname);if(!safe)return notFound(req,res);const path=join(ROOT,safe);if(!path.startsWith(ROOT))return notFound(req,res);try{const info=await stat(path);if(!info.isFile())throw new Error('not file');const body=safe==='index.html'?Buffer.from((await readFile(path,'utf8')).replaceAll('__APP_ORIGIN__',SHARE_ORIGIN)):await readFile(path),etag=`"${createHash('sha256').update(body).digest('base64url').slice(0,20)}"`,cacheControl=extname(path)==='.html'?'no-store':'public, max-age=300, must-revalidate';securityHeaders(res,{cacheControl,frameable:safe==='index.html'});res.setHeader('ETag',etag);res.setHeader('Content-Type',types[extname(path)]||'application/octet-stream');if(req.headers['if-none-match']===etag){res.statusCode=304;return res.end()}res.statusCode=200;res.setHeader('Content-Length',body.length);if(req.method==='HEAD')return res.end();res.end(body)}catch{return notFound(req,res)}}
 const server=http.createServer(async(req,res)=>{const started=performance.now(),requestId=typeof req.headers['x-request-id']==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(req.headers['x-request-id'])?req.headers['x-request-id']:id('req');res.setHeader('X-Request-ID',requestId);res.once('finish',()=>{const durationMs=performance.now()-started;telemetry.requests+=1;telemetry.totalDurationMs+=durationMs;telemetry.byStatus.set(res.statusCode,(telemetry.byStatus.get(res.statusCode)||0)+1);if(res.statusCode>=500)telemetry.errors+=1;if(!['/healthz','/readyz','/metrics'].includes(req.url?.split('?')[0]))log(res.statusCode>=500?'error':'info','http_request',{requestId,method:req.method,route:routeLabel(req.url?.split('?')[0]),status:res.statusCode,durationMs:Number(durationMs.toFixed(2))})});try{if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, HEAD, POST, PATCH, DELETE');return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}})}let url;try{url=new URL(req.url,APP_ORIGIN)}catch{
     // A protocol-relative target - "//", "//evil.example" - is not a path this
     // server can resolve against its origin, and new URL() throws on it. That
@@ -1667,7 +1683,7 @@ const server=http.createServer(async(req,res)=>{const started=performance.now(),
     // unauthenticated route anybody can call. It is a malformed request, so it
     // is answered as one.
     return json(res,400,{error:{code:'BAD_REQUEST',message:'Malformed request path.'}});
-  }if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
+  }if(req.method==='GET'&&url.pathname==='/healthz')return json(res,200,{status:'ok',uptimeSeconds:Math.round((Date.now()-telemetry.startedAt)/1000)});if(req.method==='GET'&&url.pathname==='/readyz'){const result=await query('SELECT 1 AS healthy');return json(res,200,{status:'ready',database:databaseMode(),healthy:result.rows[0]?.healthy===1})}if(req.method==='GET'&&url.pathname==='/metrics'){if(!metricsAllowed(req))return json(res,404,{error:{code:'NOT_FOUND',message:'Resource not found.'}});return textResponse(res,200,metricsPayload(),'text/plain; version=0.0.4; charset=utf-8')}if(url.pathname.startsWith('/api/'))return await api(req,res,url);if(ALLOW_INDEXING&&req.method==='GET'&&url.pathname==='/robots.txt')return textResponse(res,200,INDEXABLE_ROBOTS);if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:{code:'METHOD_NOT_ALLOWED',message:'Method not allowed.'}});return await serveStatic(req,res,url)}catch(error){log('error','request_error',{requestId,message:error.message,method:req.method,route:routeLabel(req.url?.split('?')[0])});if(!res.headersSent)json(res,500,{error:{code:'INTERNAL_ERROR',message:'Something went wrong.',requestId}});else res.end()}});
 server.listen(PORT,HOST,()=>{
   log('info','server_started',{url:`http://${HOST}:${PORT}`,database:databaseMode(),errorReporting:errorReportingEnabled()?'enabled':'stdout only',email:emailTransport()});
   // Production refuses to start with mail misconfigured. Elsewhere it is only a

@@ -488,6 +488,7 @@ async function openSession(assignmentId, { start = false } = {}) {
   $('#workoutSessionView').hidden = false;
   document.body.classList.add('in-session');
   $('#sessionName').textContent = assignment.templateSnapshot.name;
+  $('#sessionCrumb').textContent = assignment.templateSnapshot.name;
   $('#sessionMeta').textContent = [dueLabel(assignment.dueDate), assignment.templateSnapshot.description].filter(Boolean).join(' · ');
   renderSession();
   if (start && !session.startedAt) {
@@ -660,6 +661,7 @@ async function loadClientPage() {
   if (!client) return switchView('clients');
   $('#clientPageAvatar').textContent = initials(client.name);
   $('#clientPageName').textContent = client.name;
+  $('#clientCrumb').textContent = client.name;
   $('#clientPageMeta').textContent = client.email;
   try {
     const assignments = await fetchAssignments(client.id);

@@ -279,14 +279,15 @@ async function seedAssignment({ query, id, trainer, user, template, daysAgo, com
   if (!completed) return;
 
   // A completed assignment gets the log and the individual sets to match, so the
-  // trainer's read-back view has real numbers in it and the completion count on
-  // the log equals the number of sets marked complete.
+  // trainer's read-back view has real numbers in it. completed_count counts
+  // exercises, as a real log's does (server.mjs: one flag per exercise) - it
+  // used to be the set total, which printed "13 of 4 exercises done".
   const exercises = template.exercises.map((exercise, index) => ({ ...exercise, completedSets: exercise.sets, load: template.loads[index] }));
   const logId = id('log');
   const startedAt = timeAt(daysAgo, 18);
   const durationSeconds = 2400 + Math.round(jitter(seed, 900));
   await query('INSERT INTO workout_logs(id,assigned_workout_id,author_id,idempotency_key,exercises,completed_count,started_at,duration_seconds,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-    [logId, assignmentId, user.id, `demo-${assignmentId}`, JSON.stringify(exercises.map(({ load, ...rest }) => rest)), exercises.reduce((total, exercise) => total + exercise.sets, 0), startedAt, durationSeconds, new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString()]);
+    [logId, assignmentId, user.id, `demo-${assignmentId}`, JSON.stringify(exercises.map(({ load, ...rest }) => rest)), exercises.length, startedAt, durationSeconds, new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString()]);
 
   for (const [exerciseIndex, exercise] of exercises.entries()) {
     for (let setIndex = 0; setIndex < exercise.sets; setIndex += 1) {
